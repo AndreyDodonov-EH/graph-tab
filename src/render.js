@@ -140,7 +140,8 @@ export function render(container, model) {
     if (refs) {
       const refsBox = el('span', 'ggt-refs');
       for (const name of refs) {
-        const chip = el('span', 'ggt-ref', name);
+        const chip = el('a', 'ggt-ref', name);
+        chip.href = `/${owner}/${repo}/tree/${name.split('/').map(encodeURIComponent).join('/')}`;
         chip.style.color = colorOf(graph.nodes[i].color);
         chip.style.borderColor = 'currentColor';
         refsBox.appendChild(chip);
@@ -155,7 +156,8 @@ export function render(container, model) {
     }
     row.appendChild(msg);
 
-    const author = el('span', 'ggt-author');
+    const author = el(commit.login ? 'a' : 'span', 'ggt-author');
+    if (commit.login) author.href = `/${encodeURIComponent(commit.login)}`;
     if (commit.avatar) {
       const img = el('img', 'ggt-avatar');
       img.src = commit.avatar;

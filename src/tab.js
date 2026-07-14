@@ -1,6 +1,8 @@
-// The "Graph" item in the repository navigation bar. Built from scratch and
-// styled by our own CSS (no cloning of GitHub's tab markup), so it survives
-// GitHub's CSS-module class churn; only the nav container is looked up.
+// The "Graph" item in the repository navigation bar. The markup is our own,
+// but class names are copied from a sibling tab at insert time, so the tab
+// matches GitHub's current styling exactly (classic UnderlineNav and the
+// logged-in React nav alike) without hardcoding churn-prone class names.
+// Our own CSS (.ggt-nav*) only kicks in if there is no sibling to copy from.
 
 export const TAB_ID = 'ggt-tab';
 
@@ -24,6 +26,19 @@ export function repoNav() {
   return null;
 }
 
+// Copy presentation classes from a sibling element, skipping GitHub's
+// behavior/state classes (js-* hooks, selection, icon-specific octicons).
+// Returns false when nothing was copied so the caller can fall back.
+function copyClasses(source, target) {
+  if (!source) return false;
+  const names = [...source.classList].filter(
+    (name) => !name.startsWith('js-') && !name.startsWith('octicon-') && name !== 'selected'
+  );
+  if (names.length === 0) return false;
+  target.classList.add(...names);
+  return true;
+}
+
 /** Insert the Graph tab into the repo nav if missing. Returns the anchor. */
 export function ensureTab(onOpen) {
   const existing = document.getElementById(TAB_ID);
@@ -31,12 +46,13 @@ export function ensureTab(onOpen) {
   const nav = repoNav();
   if (!nav) return null;
 
+  const siblingLink = nav.querySelector('li a');
   const item = document.createElement('li');
-  item.className = 'ggt-navitem';
+  if (!copyClasses(siblingLink?.closest('li'), item)) item.className = 'ggt-navitem';
 
   const link = document.createElement('a');
   link.id = TAB_ID;
-  link.className = 'ggt-navtab';
+  if (!copyClasses(siblingLink, link)) link.className = 'ggt-navtab';
   link.href = '#graph';
   link.addEventListener('click', (event) => {
     event.preventDefault();
@@ -48,12 +64,20 @@ export function ensureTab(onOpen) {
   icon.setAttribute('width', '16');
   icon.setAttribute('height', '16');
   icon.setAttribute('aria-hidden', 'true');
+  copyClasses(siblingLink?.querySelector('svg'), icon);
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   path.setAttribute('d', ICON_PATH);
   icon.appendChild(path);
 
+  // data-content lets GitHub's CSS reserve the bold width, so the tab does
+  // not shift when it becomes selected; our fallback CSS mirrors the trick.
+  const label = document.createElement('span');
+  copyClasses(siblingLink?.querySelector('span[data-content]'), label);
+  label.setAttribute('data-content', 'Graph');
+  label.textContent = 'Graph';
+
   link.appendChild(icon);
-  link.appendChild(document.createTextNode('Graph'));
+  link.appendChild(label);
   item.appendChild(link);
   nav.appendChild(item);
   return link;

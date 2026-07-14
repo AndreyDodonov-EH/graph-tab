@@ -28,6 +28,14 @@
 .ggt-navtab[aria-current='page'] {
   font-weight: 600;
 }
+/* Reserve the bold width so the tab doesn't shift when selected. */
+.ggt-navtab [data-content]::before {
+  content: attr(data-content);
+  display: block;
+  height: 0;
+  font-weight: 600;
+  visibility: hidden;
+}
 .ggt-navtab[aria-current='page']::after {
   content: '';
   position: absolute;
@@ -99,6 +107,10 @@
   border: 1px solid;
   border-radius: 999px;
   white-space: nowrap;
+  text-decoration: none;
+}
+a.ggt-ref:hover {
+  text-decoration: underline;
 }
 .ggt-msg {
   flex: 1 1 auto;
@@ -123,6 +135,11 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--fgColor-muted, #59636e);
+  text-decoration: none;
+}
+a.ggt-author:hover {
+  color: var(--fgColor-accent, #0969da);
+  text-decoration: underline;
 }
 .ggt-avatar {
   width: 16px;
