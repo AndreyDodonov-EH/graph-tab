@@ -1,0 +1,94 @@
+// Run with: node --test tests/
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { layout } from '../src/layout.js';
+
+const c = (oid, ...parents) => ({ oid, parents });
+
+test('linear history stays in one lane', () => {
+  const g = layout([c('a', 'b'), c('b', 'c'), c('c')]);
+  assert.deepEqual(g.nodes.map((n) => n.x), [0, 0, 0]);
+  assert.deepEqual(g.nodes.map((n) => n.color), [0, 0, 0]);
+  assert.equal(g.laneCount, 1);
+  assert.ok(g.segments.every((s) => s.x1 === 0 && s.x2 === 0 && !s.dashed));
+});
+
+test('fork/merge diamond: side branch gets lane 1 and converges at the base', () => {
+  // m merges a (main) and b (feature); both descend from base.
+  const g = layout([c('m', 'a', 'b'), c('a', 'base'), c('b', 'base'), c('base')]);
+  assert.deepEqual(g.nodes.map((n) => n.x), [0, 0, 1, 0]);
+  assert.deepEqual(g.nodes.map((n) => n.color), [0, 0, 1, 0]);
+  assert.equal(g.laneCount, 2);
+  // merge edge leaves the merge node into lane 1
+  assert.ok(g.segments.some((s) => s.x1 === 0 && s.y1 === 0 && s.x2 === 1 && s.y2 === 1 && s.color === 1));
+  // feature lane converges into the base node
+  assert.ok(g.segments.some((s) => s.x1 === 1 && s.y1 === 2 && s.x2 === 0 && s.y2 === 3 && s.color === 1));
+  assert.ok(g.segments.every((s) => !s.dashed));
+});
+
+test('octopus merge opens one lane per extra parent', () => {
+  const g = layout([c('m', 'a', 'b', 'x'), c('a'), c('b'), c('x')]);
+  assert.deepEqual(g.nodes.map((n) => n.x), [0, 0, 1, 2]);
+  assert.equal(g.laneCount, 3);
+  // both merge edges start at the node
+  assert.ok(g.segments.some((s) => s.x1 === 0 && s.y1 === 0 && s.x2 === 1 && s.y2 === 1));
+  assert.ok(g.segments.some((s) => s.x1 === 0 && s.y1 === 0 && s.x2 === 2 && s.y2 === 1));
+});
+
+test('merge into a branch that already has an open lane joins it', () => {
+  // m2 merges b, which m1 (above it... below it) also targets: the second
+  // reference joins the existing lane instead of opening a new one.
+  const g = layout([
+    c('m1', 'a', 'b'),
+    c('m2', 'a2', 'b'),
+    c('a', 'root'),
+    c('a2', 'root'),
+    c('b', 'root'),
+    c('root'),
+  ]);
+  // b's lane is lane 1 (opened by m1); m2's merge edge joins it, so no third
+  // lane is created for b.
+  const bNode = g.nodes[4];
+  assert.equal(bNode.x, 1);
+  // join edge from m2's node (x=2? m2 is a tip -> lane 2) into lane 1
+  const m2Node = g.nodes[1];
+  assert.ok(
+    g.segments.some((s) => s.x1 === m2Node.x && s.y1 === 1 && s.x2 === 1 && s.y2 === 2),
+    'merge join segment missing',
+  );
+});
+
+test('freed lanes are reused', () => {
+  // Two independent roots: after the first chain ends its lane frees up.
+  const g = layout([c('a', 'root1'), c('root1'), c('b', 'root2'), c('root2')]);
+  assert.deepEqual(g.nodes.map((n) => n.x), [0, 0, 0, 0]);
+  // but colors differ: separate branches
+  assert.deepEqual(g.nodes.map((n) => n.color), [0, 0, 1, 1]);
+});
+
+test('long-lived side lane coalesces into one straight segment', () => {
+  const g = layout([
+    c('a', 'base'),
+    c('b1', 'b2'),
+    c('b2', 'b3'),
+    c('b3', 'base'),
+    c('base'),
+  ]);
+  // lane 0 passes rows 0..4 untouched except endpoints -> single vertical run
+  const straight = g.segments.filter((s) => s.x1 === 0 && s.x2 === 0 && !s.dashed);
+  assert.equal(straight.length, 1);
+  assert.deepEqual([straight[0].y1, straight[0].y2], [0, 4]);
+});
+
+test('parents outside the window produce dashed tails', () => {
+  const g = layout([c('a', 'missing')]);
+  const tails = g.segments.filter((s) => s.dashed);
+  assert.equal(tails.length, 1);
+  assert.equal(tails[0].x1, 0);
+  assert.ok(tails[0].y2 > tails[0].y1);
+});
+
+test('empty input', () => {
+  const g = layout([]);
+  assert.deepEqual(g, { nodes: [], segments: [], laneCount: 0 });
+});
