@@ -17,6 +17,8 @@
 //     meta.users[0].heads (author/owner/block filtering is wrong);
 //   - parents come as [sha, time, space] tuples.
 
+import { lsRefs, fetchMissingCommits } from './gitproto.js';
+
 const WINDOW = 100;
 
 async function fetchJson(url) {
@@ -105,6 +107,54 @@ function reachableFrom(byOid, headOids) {
   return reachable;
 }
 
+// Parents-first order, so spliced commits get ascending idx (children newer).
+function topoOrder(commits) {
+  const byOid = new Map(commits.map((c) => [c.oid, c]));
+  const ordered = [];
+  const seen = new Set();
+  const visit = (commit) => {
+    if (seen.has(commit.oid)) return;
+    seen.add(commit.oid);
+    for (const parent of commit.parents) {
+      const pc = byOid.get(parent);
+      if (pc) visit(pc);
+    }
+    ordered.push(commit);
+  };
+  commits.forEach(visit);
+  return ordered;
+}
+
+// The network-graph snapshot lags pushes (server-side cache, minutes to
+// hours). git smart-HTTP on the same origin is exact and anonymous for
+// public repos: take the real branch heads from ls-refs and splice in the
+// commits the snapshot is missing. Any failure (private repo, offline,
+// GHES without filter support) leaves the snapshot data untouched.
+async function freshen(owner, repo, heads, byOid, nextIdx) {
+  try {
+    const fresh = await lsRefs(owner, repo);
+    if (fresh.length === 0) return heads;
+    const wants = [...new Set(fresh.map((h) => h.oid))].filter((oid) => !byOid.has(oid));
+    if (wants.length > 0) {
+      const haves = heads.map((h) => h.oid);
+      const missing = await fetchMissingCommits(owner, repo, wants, haves, WINDOW);
+      for (const commit of topoOrder(missing)) {
+        if (byOid.has(commit.oid)) continue;
+        byOid.set(commit.oid, {
+          ...commit,
+          subject: commit.message.split('\n', 1)[0],
+          login: '',
+          avatar: '',
+          idx: nextIdx++,
+        });
+      }
+    }
+    return fresh;
+  } catch {
+    return heads;
+  }
+}
+
 /**
  * Open the graph data source for a repository.
  * @returns {Promise<{
@@ -122,7 +172,7 @@ export async function openRepoGraph(owner, repo) {
   }
 
   const total = Array.isArray(meta.dates) ? meta.dates.length : 0;
-  const heads = focusedHeads(meta, owner, repo);
+  let heads = focusedHeads(meta, owner, repo);
   const byOid = new Map();
 
   async function fetchWindow(start, end) {
@@ -142,6 +192,7 @@ export async function openRepoGraph(owner, repo) {
   if (!ok || byOid.size === 0) {
     throw new Error('Could not load commits from the network graph.');
   }
+  heads = await freshen(owner, repo, heads, byOid, total);
 
   return {
     owner,
