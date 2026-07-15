@@ -21,18 +21,28 @@ import { lsRefs, fetchMissingCommits } from './gitproto.js';
 
 const WINDOW = 100;
 
+// The endpoints answer flaky sometimes (rate limits, stray HTML error pages);
+// a couple of retries with backoff make loads reliable. 404 stays immediate:
+// that is a real "no such repo/graph", not a hiccup.
+const RETRY_DELAYS_MS = [500, 1500];
+
 async function fetchJson(url) {
-  const response = await fetch(url, {
-    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-    credentials: 'include',
-    cache: 'no-store',
-  });
-  if (!response.ok) return null;
-  if (!(response.headers.get('content-type') || '').includes('json')) return null;
-  try {
-    return await response.json();
-  } catch {
-    return null;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (response.status === 404) return null;
+      if (response.ok && (response.headers.get('content-type') || '').includes('json')) {
+        return await response.json();
+      }
+    } catch {
+      // network error or truncated JSON; retry below
+    }
+    if (attempt >= RETRY_DELAYS_MS.length) return null;
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
   }
 }
 
