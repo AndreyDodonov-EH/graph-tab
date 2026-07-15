@@ -95,6 +95,7 @@ test('parsePack: plain, ref-delta, and ofs-delta commits', async () => {
   assert.equal(byMsg.child.oid, childOid);
   assert.deepEqual(byMsg.grandchild.parents, [childOid]);
   assert.equal(byMsg.root.author, 'A D');
+  assert.equal(byMsg.root.email, 'a@d');
   assert.equal(byMsg.root.date.getTime(), 1783425707000);
 });
 

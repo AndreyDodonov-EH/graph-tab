@@ -132,6 +132,14 @@ function topoOrder(commits) {
 // GHES without filter support) leaves the snapshot data untouched and is
 // reported as fresh: false so the UI can flag possible staleness.
 async function freshen(owner, repo, heads, byOid, nextIdx) {
+  // Never hit git endpoints on a private repo: the anonymous 401 would make
+  // the browser pop its Basic-auth dialog. The page itself says which it is.
+  if (
+    typeof document !== 'undefined' &&
+    document.querySelector('meta[name="octolytics-dimension-repository_public"]')?.content === 'false'
+  ) {
+    return { heads, fresh: false };
+  }
   try {
     const fresh = await lsRefs(owner, repo);
     if (fresh.length === 0) return { heads, fresh: false };
@@ -139,13 +147,24 @@ async function freshen(owner, repo, heads, byOid, nextIdx) {
     if (wants.length > 0) {
       const haves = heads.map((h) => h.oid);
       const missing = await fetchMissingCommits(owner, repo, wants, haves, WINDOW);
+      // git objects carry name+email, not GitHub identities; recover login and
+      // avatar from snapshot commits by the same author, else avatar by email.
+      const identities = new Map();
+      for (const commit of byOid.values()) {
+        if (commit.login && commit.author) {
+          identities.set(commit.author, { login: commit.login, avatar: commit.avatar });
+        }
+      }
       for (const commit of topoOrder(missing)) {
         if (byOid.has(commit.oid)) continue;
+        const known = identities.get(commit.author);
         byOid.set(commit.oid, {
           ...commit,
           subject: commit.message.split('\n', 1)[0],
-          login: '',
-          avatar: '',
+          login: known ? known.login : '',
+          avatar: known
+            ? known.avatar
+            : `https://avatars.githubusercontent.com/u/e?email=${encodeURIComponent(commit.email)}&s=40`,
           idx: nextIdx++,
         });
       }

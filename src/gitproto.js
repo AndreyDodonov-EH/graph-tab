@@ -37,6 +37,9 @@ async function uploadPack(owner, repo, lines) {
       'Git-Protocol': 'version=2',
     },
     body: lines.join(''),
+    // No cookies: we emulate an anonymous git client, and a credentialed 401
+    // would make the browser pop its Basic-auth dialog over the page.
+    credentials: 'omit',
   });
   if (!response.ok) throw new Error(`git-upload-pack: HTTP ${response.status}`);
   return new Uint8Array(await response.arrayBuffer());
@@ -194,16 +197,17 @@ function parseCommit(oid, bytes) {
   const headerEnd = text.indexOf('\n\n');
   const message = headerEnd < 0 ? '' : text.slice(headerEnd + 2);
   const parents = [];
-  let author = '', date = new Date();
+  let author = '', email = '', date = new Date();
   for (const line of text.slice(0, headerEnd < 0 ? text.length : headerEnd).split('\n')) {
     if (line.startsWith('parent ')) parents.push(line.slice(7));
     else if (line.startsWith('author ')) {
-      const match = /^author (.*?) <.*> (\d+) [+-]\d{4}$/.exec(line);
+      const match = /^author (.*?) <(.*?)> (\d+) [+-]\d{4}$/.exec(line);
       if (match) {
         author = match[1];
-        date = new Date(Number(match[2]) * 1000);
+        email = match[2];
+        date = new Date(Number(match[3]) * 1000);
       }
     }
   }
-  return { oid, parents, author, date, message };
+  return { oid, parents, author, email, date, message };
 }
