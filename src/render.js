@@ -109,7 +109,7 @@ function buildSvg(graph, headOids, commits) {
  * model: { owner, repo, commits, graph, heads, filtered, hasMore, onLoadOlder }
  */
 export function render(container, model) {
-  const { owner, repo, commits, graph, heads, filtered, hasMore, onLoadOlder } = model;
+  const { owner, repo, commits, graph, heads, fresh, filtered, hasMore, onLoadOlder } = model;
 
   const refsByOid = new Map();
   for (const head of heads) {
@@ -123,6 +123,7 @@ export function render(container, model) {
   const header = el('div', 'ggt-header');
   header.appendChild(el('h2', 'ggt-title', 'Graph'));
   const parts = [`${commits.length} commits`, `${heads.length} branches`];
+  if (!fresh) parts.push('cached snapshot — may lag recent pushes');
   if (hasMore) parts.push('older history below');
   if (!filtered) parts.push('fork-network view (no branch head in the loaded window)');
   header.appendChild(el('span', 'ggt-meta', parts.join(' · ')));

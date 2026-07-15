@@ -129,11 +129,12 @@ function topoOrder(commits) {
 // hours). git smart-HTTP on the same origin is exact and anonymous for
 // public repos: take the real branch heads from ls-refs and splice in the
 // commits the snapshot is missing. Any failure (private repo, offline,
-// GHES without filter support) leaves the snapshot data untouched.
+// GHES without filter support) leaves the snapshot data untouched and is
+// reported as fresh: false so the UI can flag possible staleness.
 async function freshen(owner, repo, heads, byOid, nextIdx) {
   try {
     const fresh = await lsRefs(owner, repo);
-    if (fresh.length === 0) return heads;
+    if (fresh.length === 0) return { heads, fresh: false };
     const wants = [...new Set(fresh.map((h) => h.oid))].filter((oid) => !byOid.has(oid));
     if (wants.length > 0) {
       const haves = heads.map((h) => h.oid);
@@ -149,9 +150,9 @@ async function freshen(owner, repo, heads, byOid, nextIdx) {
         });
       }
     }
-    return fresh;
+    return { heads: fresh, fresh: true };
   } catch {
-    return heads;
+    return { heads, fresh: false };
   }
 }
 
@@ -159,6 +160,7 @@ async function freshen(owner, repo, heads, byOid, nextIdx) {
  * Open the graph data source for a repository.
  * @returns {Promise<{
  *   owner, repo, heads,
+ *   fresh,  // false when the git top-up was unavailable (private repo, offline)
  *   view(): { commits, filtered },  // newest-first, reachability-filtered
  *   hasMore(): boolean,
  *   loadOlder(): Promise<void>
@@ -192,12 +194,14 @@ export async function openRepoGraph(owner, repo) {
   if (!ok || byOid.size === 0) {
     throw new Error('Could not load commits from the network graph.');
   }
-  heads = await freshen(owner, repo, heads, byOid, total);
+  const freshened = await freshen(owner, repo, heads, byOid, total);
+  heads = freshened.heads;
 
   return {
     owner,
     repo,
     heads,
+    fresh: freshened.fresh,
 
     // filtered === false means no focused head landed in the loaded window,
     // so the raw fork network is shown rather than nothing.
