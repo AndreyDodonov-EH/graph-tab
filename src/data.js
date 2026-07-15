@@ -17,6 +17,8 @@
 //     meta.users[0].heads (author/owner/block filtering is wrong);
 //   - parents come as [sha, time, space] tuples.
 
+import { lsRefs, fetchMissingCommits } from './gitproto.js';
+
 const WINDOW = 100;
 
 async function fetchJson(url) {
@@ -105,10 +107,79 @@ function reachableFrom(byOid, headOids) {
   return reachable;
 }
 
+// Parents-first order, so spliced commits get ascending idx (children newer).
+function topoOrder(commits) {
+  const byOid = new Map(commits.map((c) => [c.oid, c]));
+  const ordered = [];
+  const seen = new Set();
+  const visit = (commit) => {
+    if (seen.has(commit.oid)) return;
+    seen.add(commit.oid);
+    for (const parent of commit.parents) {
+      const pc = byOid.get(parent);
+      if (pc) visit(pc);
+    }
+    ordered.push(commit);
+  };
+  commits.forEach(visit);
+  return ordered;
+}
+
+// The network-graph snapshot lags pushes (server-side cache, minutes to
+// hours). git smart-HTTP on the same origin is exact and anonymous for
+// public repos: take the real branch heads from ls-refs and splice in the
+// commits the snapshot is missing. Any failure (private repo, offline,
+// GHES without filter support) leaves the snapshot data untouched and is
+// reported as fresh: false so the UI can flag possible staleness.
+async function freshen(owner, repo, heads, byOid, nextIdx) {
+  // Never hit git endpoints on a private repo: the anonymous 401 would make
+  // the browser pop its Basic-auth dialog. The page itself says which it is.
+  if (
+    typeof document !== 'undefined' &&
+    document.querySelector('meta[name="octolytics-dimension-repository_public"]')?.content === 'false'
+  ) {
+    return { heads, fresh: false };
+  }
+  try {
+    const fresh = await lsRefs(owner, repo);
+    if (fresh.length === 0) return { heads, fresh: false };
+    const wants = [...new Set(fresh.map((h) => h.oid))].filter((oid) => !byOid.has(oid));
+    if (wants.length > 0) {
+      const haves = heads.map((h) => h.oid);
+      const missing = await fetchMissingCommits(owner, repo, wants, haves, WINDOW);
+      // git objects carry name+email, not GitHub identities; recover login and
+      // avatar from snapshot commits by the same author, else avatar by email.
+      const identities = new Map();
+      for (const commit of byOid.values()) {
+        if (commit.login && commit.author) {
+          identities.set(commit.author, { login: commit.login, avatar: commit.avatar });
+        }
+      }
+      for (const commit of topoOrder(missing)) {
+        if (byOid.has(commit.oid)) continue;
+        const known = identities.get(commit.author);
+        byOid.set(commit.oid, {
+          ...commit,
+          subject: commit.message.split('\n', 1)[0],
+          login: known ? known.login : '',
+          avatar: known
+            ? known.avatar
+            : `https://avatars.githubusercontent.com/u/e?email=${encodeURIComponent(commit.email)}&s=40`,
+          idx: nextIdx++,
+        });
+      }
+    }
+    return { heads: fresh, fresh: true };
+  } catch {
+    return { heads, fresh: false };
+  }
+}
+
 /**
  * Open the graph data source for a repository.
  * @returns {Promise<{
  *   owner, repo, heads,
+ *   fresh,  // false when the git top-up was unavailable (private repo, offline)
  *   view(): { commits, filtered },  // newest-first, reachability-filtered
  *   hasMore(): boolean,
  *   loadOlder(): Promise<void>
@@ -122,7 +193,7 @@ export async function openRepoGraph(owner, repo) {
   }
 
   const total = Array.isArray(meta.dates) ? meta.dates.length : 0;
-  const heads = focusedHeads(meta, owner, repo);
+  let heads = focusedHeads(meta, owner, repo);
   const byOid = new Map();
 
   async function fetchWindow(start, end) {
@@ -142,11 +213,14 @@ export async function openRepoGraph(owner, repo) {
   if (!ok || byOid.size === 0) {
     throw new Error('Could not load commits from the network graph.');
   }
+  const freshened = await freshen(owner, repo, heads, byOid, total);
+  heads = freshened.heads;
 
   return {
     owner,
     repo,
     heads,
+    fresh: freshened.fresh,
 
     // filtered === false means no focused head landed in the loaded window,
     // so the raw fork network is shown rather than nothing.

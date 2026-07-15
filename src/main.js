@@ -90,6 +90,7 @@ function rerender(view) {
     commits,
     graph: layout(commits),
     heads: source.heads,
+    fresh: source.fresh,
     filtered,
     hasMore: source.hasMore(),
     onLoadOlder: async () => {

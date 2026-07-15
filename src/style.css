@@ -149,8 +149,11 @@ a.ggt-author:hover {
 }
 .ggt-date {
   flex: none;
-  width: 64px;
+  width: 88px;
   text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--fgColor-muted, #59636e);
 }
 .ggt-sha {
