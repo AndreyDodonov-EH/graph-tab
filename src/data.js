@@ -18,8 +18,38 @@
 //   - parents come as [sha, time, space] tuples.
 
 import { lsRefs, fetchMissingCommits } from './gitproto.js';
+import { webFreshen } from './webfresh.js';
 
 const WINDOW = 100;
+
+// Opt-in freshness for private repos (see webfresh.js for why it costs one
+// page per missing commit). Persisted like column widths (columns.js).
+const PRIVATE_FRESH_KEY = 'ggt-private-fresh';
+
+export function privateFreshEnabled() {
+  try {
+    return localStorage.getItem(PRIVATE_FRESH_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function setPrivateFreshEnabled(on) {
+  try {
+    if (on) localStorage.setItem(PRIVATE_FRESH_KEY, '1');
+    else localStorage.removeItem(PRIVATE_FRESH_KEY);
+  } catch {
+    // storage unavailable; the choice just won't stick
+  }
+}
+
+// The page itself says which it is; content scripts can read it directly.
+function isPrivateRepo() {
+  return (
+    typeof document !== 'undefined' &&
+    document.querySelector('meta[name="octolytics-dimension-repository_public"]')?.content === 'false'
+  );
+}
 
 // The endpoints answer flaky sometimes (rate limits, stray HTML error pages);
 // a couple of retries with backoff make loads reliable. 404 stays immediate:
@@ -141,14 +171,22 @@ function topoOrder(commits) {
 // commits the snapshot is missing. Any failure (private repo, offline,
 // GHES without filter support) leaves the snapshot data untouched and is
 // reported as fresh: false so the UI can flag possible staleness.
-async function freshen(owner, repo, heads, byOid, nextIdx) {
+async function freshen(owner, repo, heads, byOid, nextIdx, onProgress) {
   // Never hit git endpoints on a private repo: the anonymous 401 would make
-  // the browser pop its Basic-auth dialog. The page itself says which it is.
-  if (
-    typeof document !== 'undefined' &&
-    document.querySelector('meta[name="octolytics-dimension-repository_public"]')?.content === 'false'
-  ) {
-    return { heads, fresh: false };
+  // the browser pop its Basic-auth dialog. With the opt-in on, ride the
+  // session cookie over the web endpoints instead; identities come straight
+  // from the page payload, so no name→login recovery is needed.
+  if (isPrivateRepo()) {
+    if (!privateFreshEnabled()) return { heads, fresh: false };
+    try {
+      const result = await webFreshen(owner, repo, heads, byOid, onProgress);
+      for (const commit of topoOrder(result.commits)) {
+        if (!byOid.has(commit.oid)) byOid.set(commit.oid, { ...commit, idx: nextIdx++ });
+      }
+      return { heads: result.heads, fresh: result.fresh };
+    } catch {
+      return { heads, fresh: false };
+    }
   }
   try {
     const fresh = await lsRefs(owner, repo);
@@ -187,15 +225,18 @@ async function freshen(owner, repo, heads, byOid, nextIdx) {
 
 /**
  * Open the graph data source for a repository.
+ * @param onProgress called with a running fetch count while missing commits
+ *   are pulled one request at a time (the private-repo opt-in path).
  * @returns {Promise<{
  *   owner, repo, heads,
- *   fresh,  // false when the git top-up was unavailable (private repo, offline)
+ *   fresh,    // false when no top-up was available (opted-out private repo, offline)
+ *   private,  // true when freshness needs the opt-in (git endpoints reject the session)
  *   view(): { commits, filtered },  // newest-first, reachability-filtered
  *   hasMore(): boolean,
  *   loadOlder(): Promise<void>
  * }>}
  */
-export async function openRepoGraph(owner, repo) {
+export async function openRepoGraph(owner, repo, onProgress = () => {}) {
   const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
   const meta = await fetchJson(`${base}/network/meta`);
   if (!meta || typeof meta.nethash !== 'string') {
@@ -223,7 +264,7 @@ export async function openRepoGraph(owner, repo) {
   if (!ok || byOid.size === 0) {
     throw new Error('Could not load commits from the network graph.');
   }
-  const freshened = await freshen(owner, repo, heads, byOid, total);
+  const freshened = await freshen(owner, repo, heads, byOid, total, onProgress);
   heads = freshened.heads;
 
   return {
@@ -231,6 +272,7 @@ export async function openRepoGraph(owner, repo) {
     repo,
     heads,
     fresh: freshened.fresh,
+    private: isPrivateRepo(),
 
     // filtered === false means no focused head landed in the loaded window,
     // so the raw fork network is shown rather than nothing.

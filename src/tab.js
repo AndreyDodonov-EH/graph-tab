@@ -83,6 +83,10 @@ export function ensureTab(onOpen) {
   return link;
 }
 
+// GitHub links we stole aria-current from, so closing the view (a hash-only
+// change, which GitHub does not re-render on) can hand the selection back.
+let displaced = [];
+
 /** Mark our tab current and visually deselect GitHub's own tabs. */
 export function markTabSelected() {
   const tab = document.getElementById(TAB_ID);
@@ -92,8 +96,20 @@ export function markTabSelected() {
   if (!nav) return;
   for (const link of nav.querySelectorAll('a[aria-current]')) {
     if (link !== tab) {
+      displaced.push({ link, selected: link.classList.contains('selected') });
       link.removeAttribute('aria-current');
       link.classList.remove('selected');
     }
   }
+}
+
+/** Undo markTabSelected. No-ops for links GitHub has since re-rendered. */
+export function markTabDeselected() {
+  document.getElementById(TAB_ID)?.removeAttribute('aria-current');
+  for (const { link, selected } of displaced) {
+    if (!link.isConnected) continue;
+    link.setAttribute('aria-current', 'page');
+    if (selected) link.classList.add('selected');
+  }
+  displaced = [];
 }

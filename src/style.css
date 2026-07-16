@@ -74,6 +74,17 @@
 .ggt-meta {
   color: var(--fgColor-muted, #59636e);
 }
+.ggt-fresh {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--fgColor-muted, #59636e);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
 
 /* Column widths are --ggt-col-* variables set by columns.js; the header
    dividers drag them live. Grips sit on the column boundaries: author/date/
@@ -258,6 +269,25 @@ a.ggt-author:hover {
   padding: 48px 24px;
   text-align: center;
   color: var(--fgColor-muted, #59636e);
+}
+.ggt-progress {
+  width: 220px;
+  height: 4px;
+  margin: 12px auto 0;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--borderColor-muted, #d1d9e0);
+}
+.ggt-progress-fill {
+  width: 40%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--fgColor-accent, #0969da);
+  animation: ggt-slide 1.2s ease-in-out infinite;
+}
+@keyframes ggt-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(350%); }
 }
 .ggt-error {
   color: var(--fgColor-danger, #d1242f);

@@ -23,6 +23,16 @@ Data source and rendering direction follow the findings in
   fork network with interleaved commits, so the focused repository is isolated
   by **reachability** from `meta.users[0].heads` (author/owner/block filtering
   is provably wrong — see the findings doc).
+- **Freshness** (`src/gitproto.js`, `src/webfresh.js`): the network-graph
+  snapshot lags pushes by minutes to hours, so branch heads are re-read live
+  and missing commits spliced in. Public repos: git smart-HTTP v2 on
+  `/{owner}/{repo}.git` (ls-refs + a `tree:0`-filtered fetch, parsed by an
+  own pack reader and RFC-1951 inflater). Private repos reject anonymous git,
+  so an opt-in header checkbox ("fetch fresh commits") walks
+  `/latest-commit/{ref}` and `/commit/{oid}` (as JSON via `Accept`) instead —
+  one request per missing commit, capped and per-branch, hence off by default.
+  Fetched commits are immutable, so they are cached (localStorage, keyed by
+  oid) and never re-fetched.
 - **Layout** (`src/layout.js`): pure, DOM-free lane assignment following the
   classic `git log --graph` / vscode-git-graph model — lane reservation and
   release, merge edges that join already-open lanes, octopus merges, and
@@ -32,15 +42,19 @@ Data source and rendering direction follow the findings in
   variables for the chrome so light/dark themes both work.
 - **Integration** (`src/tab.js`, `src/main.js`): the nav tab is built from
   scratch (not cloned from GitHub markup) and kept alive across soft
-  navigations by a debounced MutationObserver + `turbo:load`.
+  navigations by a debounced MutationObserver + `turbo:load`. The view is
+  URL-driven: the tab pushes `#graph` and the view opens/closes purely from
+  `location`, so refresh, back/forward, and pasted links all work (a hash —
+  unlike a real path — never reaches the server, so nothing can 404).
 
 No build step: `loader.js` dynamic-imports `src/main.js` as an ES module.
 
 ## Tests
 
 ```
-node --test tests/layout.test.mjs
+node --test tests/*.test.mjs
 ```
 
 Layout is a pure function, so the graph geometry (lanes, colors, merge joins,
-coalesced straight runs, dangling tails) is asserted directly.
+coalesced straight runs, dangling tails) is asserted directly; network code
+is tested by stubbing `globalThis.fetch`.
