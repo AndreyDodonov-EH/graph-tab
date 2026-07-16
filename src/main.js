@@ -1,13 +1,16 @@
 // Entry point: keep the Graph tab present on repo pages across GitHub's
 // soft (turbo/React) navigations, and swap the repo content for the graph
-// view when the tab is clicked.
+// view whenever the URL says so. The #graph hash is the source of truth —
+// the tab click just pushes it — so refresh (the server never sees a hash),
+// back/forward, and pasted links all land on the graph.
 
-import { ensureTab, markTabSelected, repoNav, TAB_ID } from './tab.js';
-import { openRepoGraph } from './data.js';
+import { ensureTab, markTabSelected, markTabDeselected, repoNav, TAB_ID } from './tab.js';
+import { openRepoGraph, privateFreshEnabled, setPrivateFreshEnabled } from './data.js';
 import { layout } from './layout.js';
 import { render, renderStatus } from './render.js';
 
 const VIEW_ID = 'ggt-view';
+const GRAPH_HASH = '#graph';
 
 // GitHub's non-repository top-level routes; everything else shaped like
 // /{owner}/{repo} is treated as a repo (the nav lookup is the real gate).
@@ -20,7 +23,7 @@ const RESERVED = new Set([
 
 let source = null;    // data source for the current repo
 let hidden = [];      // elements we hid to show the view; restored on close
-let lastPath = null;
+let lastHref = null;
 
 function repoFromPath() {
   const [owner, repo] = location.pathname.split('/').filter(Boolean);
@@ -42,6 +45,7 @@ function closeGraphView() {
     if (element.isConnected) element.style.removeProperty('display');
   }
   hidden = [];
+  markTabDeselected();
 }
 
 function openGraphView() {
@@ -72,8 +76,10 @@ function openGraphView() {
 async function loadAndRender(view, repoRef) {
   try {
     if (!source || source.owner !== repoRef.owner || source.repo !== repoRef.repo) {
-      renderStatus(view, 'Loading commit graph…');
-      source = await openRepoGraph(repoRef.owner, repoRef.repo);
+      renderStatus(view, 'Loading commit graph…', false, true);
+      source = await openRepoGraph(repoRef.owner, repoRef.repo, (count) =>
+        renderStatus(view, `Fetching fresh commits… ${count}`, false, true),
+      );
     }
     rerender(view);
   } catch (error) {
@@ -91,26 +97,46 @@ function rerender(view) {
     graph: layout(commits),
     heads: source.heads,
     fresh: source.fresh,
+    private: source.private,
+    privateFresh: privateFreshEnabled(),
     filtered,
     hasMore: source.hasMore(),
     onLoadOlder: async () => {
       await source.loadOlder();
       rerender(view);
     },
+    // Toggling drops the source so the next load re-runs freshen().
+    onToggleFresh: (on) => {
+      setPrivateFreshEnabled(on);
+      const repoRef = { owner: source.owner, repo: source.repo };
+      source = null;
+      loadAndRender(view, repoRef);
+    },
   });
 }
 
-// Runs on every DOM settle: detects soft navigation (path change closes the
-// view and drops the per-repo source) and re-adds the tab when GitHub
-// re-renders the nav.
+// Runs on every DOM settle and history event: syncs the view with the URL
+// (open on #graph, closed otherwise; a path change drops the per-repo
+// source) and re-adds the tab when GitHub re-renders the nav.
 function ensure() {
-  if (location.pathname !== lastPath) {
-    lastPath = location.pathname;
-    closeGraphView();
-    source = null;
+  const repoRef = repoFromPath();
+  const wantGraph = repoRef !== null && location.hash === GRAPH_HASH;
+  const href = location.pathname + location.search + location.hash;
+  if (href !== lastHref) {
+    if (lastHref !== null && lastHref.split(/[?#]/, 1)[0] !== location.pathname) source = null;
+    lastHref = href;
+    if (!wantGraph) closeGraphView();
   }
-  if (repoFromPath() && !document.getElementById(TAB_ID) && repoNav()) {
-    ensureTab(openGraphView);
+  if (wantGraph) {
+    // (Re)assert on every settle: GitHub re-renders can wipe the selection.
+    if (document.getElementById(VIEW_ID)) markTabSelected();
+    else openGraphView();
+  }
+  if (repoRef && !document.getElementById(TAB_ID) && repoNav()) {
+    ensureTab(() => {
+      if (location.hash !== GRAPH_HASH) history.pushState(null, '', GRAPH_HASH);
+      ensure();
+    });
   }
 }
 
@@ -125,4 +151,6 @@ new MutationObserver(() => {
 }).observe(document.documentElement, { childList: true, subtree: true });
 
 document.addEventListener('turbo:load', ensure);
+addEventListener('hashchange', ensure);
+addEventListener('popstate', ensure);
 ensure();

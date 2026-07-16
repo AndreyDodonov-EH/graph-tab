@@ -111,7 +111,10 @@ function buildSvg(graph, headOids, commits) {
  * model: { owner, repo, commits, graph, heads, filtered, hasMore, onLoadOlder }
  */
 export function render(container, model) {
-  const { owner, repo, commits, graph, heads, fresh, filtered, hasMore, onLoadOlder } = model;
+  const {
+    owner, repo, commits, graph, heads, fresh, filtered, hasMore, onLoadOlder,
+    private: priv, privateFresh, onToggleFresh,
+  } = model;
 
   const refsByOid = new Map();
   for (const head of heads) {
@@ -129,6 +132,19 @@ export function render(container, model) {
   if (hasMore) parts.push('older history below');
   if (!filtered) parts.push('fork-network view (no branch head in the loaded window)');
   header.appendChild(el('span', 'ggt-meta', parts.join(' · ')));
+  if (priv) {
+    const label = el('label', 'ggt-fresh');
+    label.title =
+      "Show the latest commits instead of GitHub's cached snapshot. " +
+      'On a private repository this takes one small request per new commit, ' +
+      'so the first load can take a while; fetched commits are cached on this device.';
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = privateFresh;
+    box.addEventListener('change', () => onToggleFresh(box.checked));
+    label.append(box, 'fetch fresh commits');
+    header.appendChild(label);
+  }
   root.appendChild(header);
 
   const wrap = el('div', 'ggt-wrap');
@@ -214,9 +230,16 @@ export function render(container, model) {
   container.appendChild(root);
 }
 
-/** Centered status/error message in place of the graph. */
-export function renderStatus(container, text, isError = false) {
+/** Centered status/error message in place of the graph; busy adds an
+ * indeterminate progress bar (the number of pending fetches is unknown —
+ * parents are discovered one commit page at a time). */
+export function renderStatus(container, text, isError = false, busy = false) {
   container.textContent = '';
   const status = el('div', 'ggt-status' + (isError ? ' ggt-error' : ''), text);
+  if (busy) {
+    const track = el('div', 'ggt-progress');
+    track.appendChild(el('div', 'ggt-progress-fill'));
+    status.appendChild(track);
+  }
   container.appendChild(status);
 }
