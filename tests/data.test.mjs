@@ -139,6 +139,57 @@ test('private repo without the opt-in keeps the snapshot, marked stale', async (
   }
 });
 
+test('202 (snapshot being generated) is polled through', async () => {
+  const realFetch = globalThis.fetch;
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (fn) => realSetTimeout(fn, 0); // collapse the waits
+  let metaCalls = 0;
+  globalThis.fetch = async (url) => {
+    const path = String(url);
+    if (path.includes('.git/')) return new Response('', { status: 401 });
+    if (path.includes('/network/meta')) {
+      if (++metaCalls <= 2) return new Response('', { status: 202 });
+      return jsonResponse({
+        nethash: 'h',
+        dates: ['2026-01-01'],
+        users: [{ name: 'o', repo: 'r', heads: [{ name: 'main', id: OID }] }],
+      });
+    }
+    if (path.includes('/network/chunk')) {
+      return jsonResponse({
+        commits: [{ id: OID, parents: [], author: 'X', login: 'x', date: '2026-01-01 00:00:00', message: 'hi' }],
+      });
+    }
+    throw new Error('unexpected url: ' + path);
+  };
+  try {
+    const source = await openRepoGraph('o', 'r');
+    assert.equal(source.view().commits.length, 1);
+    assert.equal(metaCalls, 3);
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.setTimeout = realSetTimeout;
+  }
+});
+
+test('persistent 202 surfaces a "still generating" error, not "no data"', async () => {
+  const realFetch = globalThis.fetch;
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (fn) => realSetTimeout(fn, 0);
+  let metaCalls = 0;
+  globalThis.fetch = async () => {
+    metaCalls++;
+    return new Response('', { status: 202 });
+  };
+  try {
+    await assert.rejects(() => openRepoGraph('o', 'r'), /still generating/);
+    assert.equal(metaCalls, 6); // initial attempt + the five pending waits
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.setTimeout = realSetTimeout;
+  }
+});
+
 test('404 fails immediately without retries', async () => {
   const calls = [];
   const realFetch = globalThis.fetch;

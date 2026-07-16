@@ -56,23 +56,46 @@ function isPrivateRepo() {
 // that is a real "no such repo/graph", not a hiccup.
 const RETRY_DELAYS_MS = [500, 1500];
 
-async function fetchJson(url) {
-  for (let attempt = 0; ; attempt++) {
+// 202 with an empty body means GitHub is generating the graph snapshot
+// server-side (a repo's first visit; big fork networks take minutes) —
+// GitHub's own network page polls through it exactly like this.
+const PENDING_DELAYS_MS = [2000, 3000, 5000, 8000, 12000];
+const PENDING_MESSAGE =
+  'GitHub is still generating the graph data for this repository ' +
+  '(large histories take a few minutes) — try again shortly.';
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function fetchJson(url, pendingDelays = []) {
+  let pendingWaits = 0;
+  for (let attempt = 0; ; ) {
+    let response = null;
     try {
-      const response = await fetch(url, {
+      response = await fetch(url, {
         headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         credentials: 'include',
         cache: 'no-store',
       });
-      if (response.status === 404) return null;
-      if (response.ok && (response.headers.get('content-type') || '').includes('json')) {
-        return await response.json();
-      }
     } catch {
-      // network error or truncated JSON; retry below
+      // network error; retry below
+    }
+    if (response) {
+      if (response.status === 404) return null;
+      if (response.status === 202) {
+        if (pendingWaits >= pendingDelays.length) throw new Error(PENDING_MESSAGE);
+        await sleep(pendingDelays[pendingWaits++]);
+        continue;
+      }
+      if (response.ok && (response.headers.get('content-type') || '').includes('json')) {
+        try {
+          return await response.json();
+        } catch {
+          // truncated JSON; retry below
+        }
+      }
     }
     if (attempt >= RETRY_DELAYS_MS.length) return null;
-    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+    await sleep(RETRY_DELAYS_MS[attempt++]);
   }
 }
 
@@ -238,7 +261,7 @@ async function freshen(owner, repo, heads, byOid, nextIdx, onProgress) {
  */
 export async function openRepoGraph(owner, repo, onProgress = () => {}) {
   const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  const meta = await fetchJson(`${base}/network/meta`);
+  const meta = await fetchJson(`${base}/network/meta`, PENDING_DELAYS_MS);
   if (!meta || typeof meta.nethash !== 'string') {
     throw new Error('No network-graph data for this repository (empty repo, or GitHub changed the endpoint).');
   }
