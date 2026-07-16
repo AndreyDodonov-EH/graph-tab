@@ -75,6 +75,68 @@
   color: var(--fgColor-muted, #59636e);
 }
 
+/* Column widths are --ggt-col-* variables set by columns.js; the header
+   dividers drag them live. Grips sit on the column boundaries: author/date/
+   sha are right-anchored (message flexes), so grips position from the right
+   by summing the widths of everything to their right plus the 12px gaps. */
+.ggt-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 26px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fgColor-muted, #59636e);
+  border-bottom: 1px solid var(--borderColor-muted, #d1d9e0);
+}
+.ggt-h-graph {
+  flex: none;
+  width: calc(var(--ggt-col-graph, 20px) - 12px);
+  overflow: hidden;
+}
+.ggt-h-desc {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ggt-head .ggt-sha {
+  font-family: inherit;
+  font-size: inherit;
+}
+.ggt-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  cursor: col-resize;
+}
+.ggt-grip::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 5px;
+  bottom: 5px;
+  width: 1px;
+  background: var(--borderColor-default, #d1d9e0);
+}
+.ggt-grip:hover::after {
+  left: 3.5px;
+  width: 2px;
+  background: var(--fgColor-accent, #0969da);
+}
+.ggt-grip-graph {
+  left: calc(var(--ggt-col-graph, 20px) - 8.5px);
+}
+.ggt-grip-author {
+  right: calc(var(--ggt-col-sha, 64px) + var(--ggt-col-date, 88px) + var(--ggt-col-author, 150px) + 25.5px);
+}
+.ggt-grip-date {
+  right: calc(var(--ggt-col-sha, 64px) + var(--ggt-col-date, 88px) + 13.5px);
+}
+.ggt-grip-sha {
+  right: calc(var(--ggt-col-sha, 64px) + 1.5px);
+}
+
 .ggt-wrap {
   position: relative;
 }
@@ -82,6 +144,7 @@
   position: absolute;
   top: 0;
   left: 0;
+  max-width: calc(var(--ggt-col-graph, 20px) - 8px); /* crops when narrowed */
   pointer-events: none;
 }
 .ggt-row {
@@ -89,6 +152,7 @@
   align-items: center;
   gap: 12px;
   height: 28px;
+  padding-left: var(--ggt-col-graph, 20px);
   border-radius: 6px;
 }
 .ggt-row:hover {
@@ -127,7 +191,7 @@ a.ggt-ref:hover {
 }
 .ggt-author {
   flex: none;
-  width: 150px;
+  width: var(--ggt-col-author, 150px);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -149,7 +213,7 @@ a.ggt-author:hover {
 }
 .ggt-date {
   flex: none;
-  width: 88px;
+  width: var(--ggt-col-date, 88px);
   text-align: right;
   white-space: nowrap;
   overflow: hidden;
@@ -158,7 +222,7 @@ a.ggt-author:hover {
 }
 .ggt-sha {
   flex: none;
-  width: 64px;
+  width: var(--ggt-col-sha, 64px);
   text-align: right;
   font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
   font-size: 12px;
