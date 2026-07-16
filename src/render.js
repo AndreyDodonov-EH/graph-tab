@@ -4,6 +4,8 @@
 // same cubic-bezier shape as vscode-git-graph. Colors come from a fixed
 // palette; text and chrome use GitHub's CSS variables so both themes work.
 
+import { initColumns } from './columns.js';
+
 const ROW_H = 28;
 const LANE_W = 14;
 const PAD_X = 12;
@@ -131,11 +133,24 @@ export function render(container, model) {
 
   const wrap = el('div', 'ggt-wrap');
   const { svg, width } = buildSvg(graph, headOids, commits);
+  const divider = initColumns(root, { graph: width + 8, author: 150, date: 88, sha: 64 });
+
+  const cols = el('div', 'ggt-head');
+  cols.appendChild(el('span', 'ggt-h-graph', 'Graph'));
+  cols.appendChild(el('span', 'ggt-h-desc', 'Description'));
+  cols.appendChild(el('span', 'ggt-author', 'Author'));
+  cols.appendChild(el('span', 'ggt-date', 'Date'));
+  cols.appendChild(el('span', 'ggt-sha', 'Commit'));
+  cols.appendChild(divider('graph', +1));
+  cols.appendChild(divider('author', -1));
+  cols.appendChild(divider('date', -1));
+  cols.appendChild(divider('sha', -1));
+  root.appendChild(cols);
+
   const rows = el('div', 'ggt-rows');
 
   commits.forEach((commit, i) => {
     const row = el('div', 'ggt-row');
-    row.style.paddingLeft = width + 8 + 'px';
 
     const refs = refsByOid.get(commit.oid);
     if (refs) {
