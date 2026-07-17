@@ -60,3 +60,8 @@ node --test tests/*.test.mjs
 Layout is a pure function, so the graph geometry (lanes, colors, merge joins,
 coalesced straight runs, dangling tails) is asserted directly; network code
 is tested by stubbing `globalThis.fetch`.
+
+
+## Deployment
+
+`package.sh` can be used to create a zip for the browser extension store
