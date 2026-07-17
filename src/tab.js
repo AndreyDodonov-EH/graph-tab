@@ -79,6 +79,10 @@ export function ensureTab(onOpen) {
   if (!copyClasses(siblingLink, link)) link.className = 'ggt-navtab';
   link.href = '#graph';
   link.addEventListener('click', (event) => {
+    // Modified clicks (new tab/window) keep the default: the relative
+    // "#graph" href resolves against the current page URL, which is exactly
+    // the link such a click should open.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     onOpen();
   });
