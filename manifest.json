@@ -3,6 +3,9 @@
   "name": "GitHub Graph Tab",
   "version": "0.1.0",
   "description": "Adds a Graph tab to GitHub repositories. Renders the commit graph with no token, OAuth, or permissions - it rides your existing github.com session.",
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://github.com/*"],
