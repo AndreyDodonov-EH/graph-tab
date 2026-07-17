@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Graph Tab for GitHub",
+  "version": "0.1.1",
+  "description": "Adds a Graph tab to GitHub repositories. Renders the commit graph without requiring any permissions.",
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "graph-tab@dodonov.dev",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["loader.js"],
+      "css": ["src/style.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/*.js"],
+      "matches": ["https://github.com/*"]
+    }
+  ]
+}
