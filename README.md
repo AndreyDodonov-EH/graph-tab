@@ -1,10 +1,14 @@
 # Graph Tab for GitHub
 
+![Graph Tab demo](img/graphtab.gif)
+
+
 A standalone Chrome extension that adds a **Graph** tab to GitHub repository
 pages and renders the commit graph — with **no token, no OAuth, and no
 extension permissions**. Same-origin fetches from the content script ride the
 user's existing github.com session cookie, so any repo you can view in the
 browser (public, private, org) works with zero setup.
+
 
 ## Install
 `WIP, extension store publish pending`
