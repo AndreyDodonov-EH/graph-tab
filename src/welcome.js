@@ -51,8 +51,6 @@ function show(index) {
   const target = step.target();
   if (!target) return finish();
   const rect = target.getBoundingClientRect();
-  // Cap the spotlight so the card below it always fits in the viewport.
-  const height = Math.min(rect.height, Math.max(120, innerHeight - rect.top - 200));
 
   root?.remove();
   root = document.createElement('div');
@@ -63,23 +61,9 @@ function show(index) {
 
   const spot = document.createElement('div');
   spot.className = 'ggt-welcome-spot';
-  Object.assign(spot.style, {
-    top: rect.top - step.pad + 'px',
-    left: rect.left - step.pad + 'px',
-    width: rect.width + 2 * step.pad + 'px',
-    height: height + 2 * step.pad + 'px',
-  });
 
   const card = document.createElement('div');
   card.className = 'ggt-welcome-card';
-  const cardGap = 12;
-  const cardHeight = 140; // 16 padding + 14 title + 6 gap + ~90 body + 12 gap + 28 footer + 16 padding
-  const cardTop = Math.min(rect.top + height + step.pad + cardGap, innerHeight - cardHeight - 16);
-  const cardLeft = Math.max(16, Math.min(rect.left - 8, innerWidth - 376 - 16));
-  Object.assign(card.style, {
-    top: cardTop + 'px',
-    left: cardLeft + 'px',
-  });
 
   const title = document.createElement('h3');
   title.textContent = step.title;
@@ -103,6 +87,32 @@ function show(index) {
   card.append(title, body, foot);
   root.append(spot, card);
   document.body.appendChild(root);
+
+  // Position with the card's real height (it varies per step and font), all
+  // in the same task so nothing paints half-placed: cap the spotlight so the
+  // card fits below it, and clamp the card on screen — the tour freezes
+  // scrolling, so a button below the fold would be unreachable.
+  const cardGap = 12;
+  const cardHeight = card.offsetHeight;
+  const height = Math.min(
+    rect.height,
+    Math.max(80, innerHeight - rect.top - cardHeight - cardGap - 2 * step.pad - 16),
+  );
+  Object.assign(spot.style, {
+    top: rect.top - step.pad + 'px',
+    left: rect.left - step.pad + 'px',
+    width: rect.width + 2 * step.pad + 'px',
+    height: height + 2 * step.pad + 'px',
+  });
+  const cardTop = Math.max(
+    16,
+    Math.min(rect.top + height + step.pad + cardGap, innerHeight - cardHeight - 16),
+  );
+  const cardLeft = Math.max(16, Math.min(rect.left - 8, innerWidth - 376 - 16));
+  Object.assign(card.style, {
+    top: cardTop + 'px',
+    left: cardLeft + 'px',
+  });
   button.focus();
 }
 
