@@ -26,6 +26,30 @@ export function repoNav() {
   return null;
 }
 
+// GitHub renders the logged-in nav as a React island (<react-partial
+// partial-name="global-nav-bar">, SSR'd then hydrated) that also contains
+// the header search box. Inserting a foreign <li> before hydration makes
+// React treat the whole island as a hydration mismatch: it discards the
+// server DOM and re-renders client-side (data-ssr flips to "false"), which
+// silently drops the server-only <qbsearch-input> internals — the search
+// box then dies on first click. GitHub adds class="loaded" to the island
+// once React has finished mounting (verified to land after hydration), and
+// unlike React's fiber expandos a class is visible from the content-script
+// world — so until it shows up, leave the nav alone (main.js retries). The
+// timeout is a safety valve: if "loaded" never comes (GitHub renames it,
+// React crashed on its own), a late insert is harmless and beats never
+// showing the tab.
+let pendingSince = 0;
+function hydrationPending(nav) {
+  const root = nav.closest('react-app, react-partial');
+  if (!root || root.classList.contains('loaded')) {
+    pendingSince = 0;
+    return false;
+  }
+  pendingSince ||= Date.now();
+  return Date.now() - pendingSince < 8000;
+}
+
 // Copy presentation classes from a sibling element, skipping GitHub's
 // behavior/state classes (js-* hooks, selection, icon-specific octicons).
 // Returns false when nothing was copied so the caller can fall back.
@@ -44,7 +68,7 @@ export function ensureTab(onOpen) {
   const existing = document.getElementById(TAB_ID);
   if (existing) return existing;
   const nav = repoNav();
-  if (!nav) return null;
+  if (!nav || hydrationPending(nav)) return null;
 
   const siblingLink = nav.querySelector('li a');
   const item = document.createElement('li');

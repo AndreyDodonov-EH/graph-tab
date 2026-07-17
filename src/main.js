@@ -25,6 +25,7 @@ const RESERVED = new Set([
 let source = null;    // data source for the current repo
 let hidden = [];      // elements we hid to show the view; restored on close
 let lastHref = null;
+let hydrationRetry = 0;
 
 function repoFromPath() {
   const [owner, repo] = location.pathname.split('/').filter(Boolean);
@@ -135,10 +136,17 @@ function ensure() {
     else openGraphView();
   }
   if (repoRef && !document.getElementById(TAB_ID) && repoNav()) {
-    ensureTab(() => {
+    const tab = ensureTab(() => {
       if (location.hash !== GRAPH_HASH) history.pushState(null, '', GRAPH_HASH);
       ensure();
     });
+    // A declined insert means the nav's React island is still hydrating.
+    // Hydration changes no DOM, so the MutationObserver alone might never
+    // see it finish — poll until the tab goes in.
+    if (!tab) {
+      clearTimeout(hydrationRetry);
+      hydrationRetry = setTimeout(ensure, 250);
+    }
   }
 }
 
