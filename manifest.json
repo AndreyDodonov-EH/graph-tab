@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "GitHub Graph Tab",
+  "name": "Graph Tab for GitHub",
   "version": "0.1.0",
-  "description": "Adds a Graph tab to GitHub repositories. Renders the commit graph with no token, OAuth, or permissions - it rides your existing github.com session.",
+  "description": "Adds a Graph tab to GitHub repositories. Renders the commit graph without requiring any permissions.",
   "background": {
     "service_worker": "background.js"
   },
