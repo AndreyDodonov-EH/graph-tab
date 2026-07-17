@@ -78,21 +78,37 @@ function openGraphView() {
 async function loadAndRender(view, repoRef) {
   try {
     if (!source || source.owner !== repoRef.owner || source.repo !== repoRef.repo) {
-      renderStatus(view, 'Loading commit graph…', false, true);
+      renderStatus(view, repoRef, 'Loading the newest commits…', {
+        busy: true,
+        detail: 'GitHub may need a moment to generate graph data for this repository.',
+      });
       source = await openRepoGraph(repoRef.owner, repoRef.repo, (count) =>
-        renderStatus(view, `Fetching fresh commits… ${count}`, false, true),
+        renderStatus(view, repoRef, `Fetching fresh commits… ${count}`, {
+          busy: true,
+          detail: 'One small request per missing commit; fetched commits are cached on this device.',
+        }),
       );
     }
     rerender(view);
     maybeWelcome();
   } catch (error) {
     source = null;
-    renderStatus(view, String(error.message || error), true);
+    renderStatus(view, repoRef, String(error.message || error), {
+      error: true,
+      onRetry: () => loadAndRender(view, repoRef),
+    });
   }
 }
 
 function rerender(view) {
   const { commits, filtered } = source.view();
+  // Reloading via a fresh source re-fetches meta (new nethash) and re-runs
+  // freshen(); used by both the Refresh button and the opt-in toggle.
+  const reload = () => {
+    const repoRef = { owner: source.owner, repo: source.repo };
+    source = null;
+    loadAndRender(view, repoRef);
+  };
   render(view, {
     owner: source.owner,
     repo: source.repo,
@@ -103,17 +119,19 @@ function rerender(view) {
     private: source.private,
     privateFresh: privateFreshEnabled(),
     filtered,
+    total: source.total,
+    loaded: source.loaded(),
+    olderCount: source.olderCount(),
+    failedWindows: source.failedWindows(),
     hasMore: source.hasMore(),
+    onRefresh: reload,
     onLoadOlder: async () => {
       await source.loadOlder();
       rerender(view);
     },
-    // Toggling drops the source so the next load re-runs freshen().
     onToggleFresh: (on) => {
       setPrivateFreshEnabled(on);
-      const repoRef = { owner: source.owner, repo: source.repo };
-      source = null;
-      loadAndRender(view, repoRef);
+      reload();
     },
   });
 }

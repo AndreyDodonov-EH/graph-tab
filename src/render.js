@@ -3,6 +3,10 @@
 // (vscode-git-graph's structural model). Curved lane transitions use the
 // same cubic-bezier shape as vscode-git-graph. Colors come from a fixed
 // palette; text and chrome use GitHub's CSS variables so both themes work.
+//
+// Everything sits inside a bordered "shell" styled like GitHub's own boxed
+// lists: a muted toolbar (title, counts subtitle, actions), status banners,
+// the graph, and a muted footer with the pagination button.
 
 import { initColumns } from './columns.js';
 
@@ -106,13 +110,35 @@ function buildSvg(graph, headOids, commits) {
   return { svg, width };
 }
 
+// The framed box with its toolbar: title plus the muted subtitle under it.
+function buildShell(subtitle) {
+  const shell = el('section', 'ggt-shell');
+  const toolbar = el('div', 'ggt-toolbar');
+  const titles = el('div', 'ggt-titles');
+  titles.appendChild(el('h2', 'ggt-title', 'Commit graph'));
+  if (subtitle) titles.appendChild(el('span', 'ggt-subtitle', subtitle));
+  toolbar.appendChild(titles);
+  shell.appendChild(toolbar);
+  return { shell, toolbar };
+}
+
+function avatarFallback(commit) {
+  const initial = (commit.login || commit.author || '?').charAt(0).toUpperCase();
+  const span = el('span', 'ggt-avatar ggt-avatar-fallback', initial);
+  span.setAttribute('aria-hidden', 'true');
+  return span;
+}
+
 /**
  * Render the graph view into `container` (cleared first).
- * model: { owner, repo, commits, graph, heads, filtered, hasMore, onLoadOlder }
+ * model: { owner, repo, commits, graph, heads, fresh, filtered, total,
+ *   loaded, olderCount, failedWindows, hasMore, onLoadOlder, onRefresh,
+ *   private, privateFresh, onToggleFresh }
  */
 export function render(container, model) {
   const {
-    owner, repo, commits, graph, heads, fresh, filtered, hasMore, onLoadOlder,
+    owner, repo, commits, graph, heads, fresh, filtered, hasMore,
+    total, loaded, olderCount, failedWindows, onLoadOlder, onRefresh,
     private: priv, privateFresh, onToggleFresh,
   } = model;
 
@@ -124,14 +150,13 @@ export function render(container, model) {
   const headOids = new Set(refsByOid.keys());
 
   const root = el('div', 'ggt-root');
+  const grandTotal = Math.max(total, loaded);
+  const { shell, toolbar } = buildShell(
+    `${owner}/${repo} · ${loaded} of ${grandTotal} commits loaded · ` +
+      `${heads.length} ${heads.length === 1 ? 'branch' : 'branches'}`,
+  );
 
-  const header = el('div', 'ggt-header');
-  header.appendChild(el('h2', 'ggt-title', 'Graph'));
-  const parts = [`${commits.length} commits`, `${heads.length} branches`];
-  if (!fresh) parts.push('cached snapshot — may lag recent pushes');
-  if (hasMore) parts.push('older history below');
-  if (!filtered) parts.push('fork-network view (no branch head in the loaded window)');
-  header.appendChild(el('span', 'ggt-meta', parts.join(' · ')));
+  const actions = el('div', 'ggt-actions');
   if (priv) {
     const label = el('label', 'ggt-fresh');
     label.title =
@@ -143,13 +168,37 @@ export function render(container, model) {
     box.checked = privateFresh;
     box.addEventListener('change', () => onToggleFresh(box.checked));
     label.append(box, 'fetch fresh commits');
-    header.appendChild(label);
+    actions.appendChild(label);
   }
-  root.appendChild(header);
+  const pill = el('span', 'ggt-pill' + (fresh ? ' ggt-pill-fresh' : ''), fresh ? 'Fresh' : 'Cached');
+  pill.title = fresh
+    ? 'Branch heads were verified live; the graph is current.'
+    : priv && !privateFresh
+      ? "GitHub's cached snapshot — it can lag pushes by minutes to hours. " +
+        'Tick "fetch fresh commits" to top it up.'
+      : "Freshness could not be verified — GitHub's cached snapshot may lag recent pushes.";
+  actions.appendChild(pill);
+  const refresh = el('button', 'ggt-btn', 'Refresh');
+  refresh.title = 'Reload the graph from GitHub';
+  refresh.addEventListener('click', () => {
+    refresh.disabled = true;
+    onRefresh();
+  });
+  actions.appendChild(refresh);
+  toolbar.appendChild(actions);
 
-  const wrap = el('div', 'ggt-wrap');
+  if (!filtered) {
+    shell.appendChild(el('div', 'ggt-banner',
+      'No branch head of this repository is inside the loaded window — showing the raw fork network.'));
+  }
+  if (failedWindows > 0) {
+    shell.appendChild(el('div', 'ggt-banner ggt-banner-error',
+      `Skipped ${failedWindows} older window${failedWindows === 1 ? '' : 's'} ` +
+        'that GitHub could not return — the graph may have gaps.'));
+  }
+
   const { svg, width } = buildSvg(graph, headOids, commits);
-  const divider = initColumns(root, { graph: width + 8, author: 150, date: 88, sha: 64 });
+  const divider = initColumns(root, { graph: width + 20, author: 150, date: 88, sha: 64 });
 
   const cols = el('div', 'ggt-head');
   cols.appendChild(el('span', 'ggt-h-graph', 'Graph'));
@@ -161,7 +210,7 @@ export function render(container, model) {
   cols.appendChild(divider('author', -1));
   cols.appendChild(divider('date', -1));
   cols.appendChild(divider('sha', -1));
-  root.appendChild(cols);
+  shell.appendChild(cols);
 
   const rows = el('div', 'ggt-rows');
 
@@ -195,14 +244,16 @@ export function render(container, model) {
       img.src = commit.avatar;
       img.alt = '';
       img.loading = 'lazy';
-      img.addEventListener('error', () => img.remove());
+      img.addEventListener('error', () => img.replaceWith(avatarFallback(commit)));
       author.appendChild(img);
+    } else {
+      author.appendChild(avatarFallback(commit));
     }
     author.appendChild(document.createTextNode(commit.login || commit.author));
     row.appendChild(author);
 
-    const time = el('time', 'ggt-date', relTime(commit.date));
-    time.title = commit.date.toLocaleString();
+    const time = el('time', 'ggt-date', commit.date ? relTime(commit.date) : '—');
+    time.title = commit.date ? commit.date.toLocaleString() : 'Date unavailable';
     row.appendChild(time);
 
     const sha = el('a', 'ggt-sha', commit.oid.slice(0, 7));
@@ -212,34 +263,59 @@ export function render(container, model) {
     rows.appendChild(row);
   });
 
+  const wrap = el('div', 'ggt-wrap');
   wrap.appendChild(rows);
   wrap.appendChild(svg);
-  root.appendChild(wrap);
+  shell.appendChild(wrap);
 
   if (hasMore) {
-    const more = el('button', 'ggt-more', 'Load older commits');
+    const footer = el('div', 'ggt-footer');
+    const more = el('button', 'ggt-btn', `Load ${olderCount} older commit${olderCount === 1 ? '' : 's'}`);
     more.addEventListener('click', async () => {
       more.disabled = true;
       more.textContent = 'Loading…';
+      more.setAttribute('aria-busy', 'true');
       await onLoadOlder();
     });
-    root.appendChild(more);
+    footer.appendChild(more);
+    footer.appendChild(el('span', 'ggt-footer-count', `${loaded} of ${grandTotal} loaded`));
+    footer.setAttribute('aria-live', 'polite');
+    shell.appendChild(footer);
   }
 
+  root.appendChild(shell);
   container.textContent = '';
   container.appendChild(root);
 }
 
-/** Centered status/error message in place of the graph; busy adds an
- * indeterminate progress bar (the number of pending fetches is unknown —
- * parents are discovered one commit page at a time). */
-export function renderStatus(container, text, isError = false, busy = false) {
+/**
+ * Centered status message inside the framed shell, in place of the graph.
+ * options: { error, busy, detail, onRetry }. busy adds an indeterminate
+ * progress bar (the number of pending fetches is unknown — parents are
+ * discovered one commit page at a time); onRetry adds a "Try again" button.
+ */
+export function renderStatus(container, repoRef, text, options = {}) {
+  const { error = false, busy = false, detail = '', onRetry = null } = options;
   container.textContent = '';
-  const status = el('div', 'ggt-status' + (isError ? ' ggt-error' : ''), text);
+  const root = el('div', 'ggt-root');
+  const { shell } = buildShell(repoRef ? `${repoRef.owner}/${repoRef.repo}` : '');
+  if (busy) shell.setAttribute('aria-busy', 'true');
+
+  const status = el('div', 'ggt-status' + (error ? ' ggt-error' : ''));
+  if (error) status.setAttribute('role', 'alert');
+  status.appendChild(el('div', null, text));
+  if (detail) status.appendChild(el('div', 'ggt-status-detail', detail));
   if (busy) {
     const track = el('div', 'ggt-progress');
     track.appendChild(el('div', 'ggt-progress-fill'));
     status.appendChild(track);
   }
-  container.appendChild(status);
+  if (onRetry) {
+    const retry = el('button', 'ggt-btn ggt-retry', 'Try again');
+    retry.addEventListener('click', onRetry);
+    status.appendChild(retry);
+  }
+  shell.appendChild(status);
+  root.appendChild(shell);
+  container.appendChild(root);
 }

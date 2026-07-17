@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import zlib from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { openRepoGraph } from '../src/data.js';
 
 const OID = 'a'.repeat(40);
@@ -187,6 +189,160 @@ test('persistent 202 surfaces a "still generating" error, not "no data"', async 
   } finally {
     globalThis.fetch = realFetch;
     globalThis.setTimeout = realSetTimeout;
+  }
+});
+
+test('chunk windows use the endpoint\'s inclusive end parameter', async () => {
+  const chunkUrls = [];
+  const realFetch = globalThis.fetch;
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (fn) => realSetTimeout(fn, 0);
+  globalThis.fetch = async (url) => {
+    const path = String(url);
+    if (path.includes('/network/meta')) {
+      return jsonResponse({
+        nethash: 'h',
+        dates: new Array(150).fill('2026-01-01'),
+        users: [{ name: 'o', repo: 'r', heads: [{ name: 'main', id: OID }] }],
+      });
+    }
+    if (path.includes('/network/chunk')) {
+      chunkUrls.push(new URL(path, 'https://github.com'));
+      // second (older) window: persistently broken
+      if (chunkUrls.length > 1) return new Response('<html>error</html>', { status: 500 });
+      return jsonResponse({
+        commits: [{ id: OID, parents: [], author: 'X', login: 'x', date: '2026-01-01 00:00:00', message: 'hi' }],
+      });
+    }
+    throw new Error('unexpected url: ' + path);
+  };
+  try {
+    const source = await openRepoGraph('o', 'r');
+    // newest window of 100 over 150 commits: [50, 150) sent as start=50&end=149
+    assert.equal(chunkUrls[0].searchParams.get('start'), '50');
+    assert.equal(chunkUrls[0].searchParams.get('end'), '149');
+    assert.equal(source.hasMore(), true);
+    assert.equal(source.olderCount(), 50);
+
+    await source.loadOlder();
+    // older window [0, 50) sent as start=0&end=49; its failure is counted,
+    // not silently swallowed, and pagination still terminates
+    assert.equal(chunkUrls.at(-1).searchParams.get('start'), '0');
+    assert.equal(chunkUrls.at(-1).searchParams.get('end'), '49');
+    assert.equal(source.failedWindows(), 1);
+    assert.equal(source.hasMore(), false);
+    assert.equal(source.view().commits.length, 1);
+  } finally {
+    globalThis.fetch = realFetch;
+    globalThis.setTimeout = realSetTimeout;
+  }
+});
+
+// --- public freshen completeness ------------------------------------------
+// Minimal pack fabrication (plain commit objects only, no deltas).
+
+function oidOf(content) {
+  return createHash('sha1')
+    .update(`commit ${content.length}\0`)
+    .update(content)
+    .digest('hex');
+}
+
+function commitBytes({ parents = [], message }) {
+  const author = 'A D <a@d> 1783425707 +0200';
+  return Buffer.from(
+    'tree 5d6ce700f8d74e8de7dfaf0d89a35f75b94d1483\n' +
+      parents.map((p) => `parent ${p}\n`).join('') +
+      `author ${author}\ncommitter ${author}\n\n${message}`
+  );
+}
+
+function packOf(objects) {
+  const header = Buffer.concat([
+    Buffer.from('PACK'),
+    Buffer.from([0, 0, 0, 2, 0, 0, 0, objects.length]),
+  ]);
+  const bodies = objects.map((content) => {
+    assert.ok(content.length < 2048, 'test helper: two-byte size header only');
+    return Buffer.concat([Buffer.from([(1 << 4) | (content.length & 15) | 0x80, content.length >> 4]), zlib.deflateSync(content)]);
+  });
+  return Buffer.concat([header, ...bodies, Buffer.alloc(20)]);
+}
+
+const pkt = (buf) => {
+  const bytes = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  return Buffer.concat([Buffer.from((bytes.length + 4).toString(16).padStart(4, '0')), bytes]);
+};
+
+function publicFreshenFetch({ snapshotOid, headOid, packObjects }) {
+  return async (url, init = {}) => {
+    const path = String(url);
+    if (path.includes('/network/meta')) {
+      return jsonResponse({
+        nethash: 'h',
+        dates: ['2026-01-01'],
+        users: [{ name: 'o', repo: 'r', heads: [{ name: 'main', id: snapshotOid }] }],
+      });
+    }
+    if (path.includes('/network/chunk')) {
+      return jsonResponse({
+        commits: [{ id: snapshotOid, parents: [], author: 'A D', login: 'ad', date: '2026-01-01 00:00:00', message: 'old' }],
+      });
+    }
+    if (path.includes('.git/git-upload-pack')) {
+      if (String(init.body).includes('command=ls-refs')) {
+        return new Response(pkt(`${headOid} refs/heads/main\n`).toString() + '0000');
+      }
+      const body = Buffer.concat([
+        pkt('packfile\n'),
+        pkt(Buffer.concat([Buffer.from([1]), packOf(packObjects)])),
+        Buffer.from('0000'),
+      ]);
+      return new Response(body);
+    }
+    throw new Error('unexpected url: ' + path);
+  };
+}
+
+test('public freshen splices commits when the pack closes the gap', async () => {
+  const b = commitBytes({ parents: [OID], message: 'mid\n' });
+  const c = commitBytes({ parents: [oidOf(b)], message: 'tip\n' });
+  const realFetch = globalThis.fetch;
+  globalThis.document = {
+    querySelector: (selector) =>
+      selector.includes('repository_public') ? { content: 'true' } : null,
+  };
+  globalThis.fetch = publicFreshenFetch({ snapshotOid: OID, headOid: oidOf(c), packObjects: [b, c] });
+  try {
+    const source = await openRepoGraph('o', 'r');
+    assert.equal(source.fresh, true);
+    assert.deepEqual(source.heads, [{ name: 'main', oid: oidOf(c) }]);
+    assert.deepEqual(source.view().commits.map((commit) => commit.oid), [oidOf(c), oidOf(b), OID]);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete globalThis.document;
+  }
+});
+
+test('public freshen keeps the consistent snapshot when the pack leaves a gap', async () => {
+  const b = commitBytes({ parents: [OID], message: 'mid\n' });
+  const c = commitBytes({ parents: [oidOf(b)], message: 'tip\n' });
+  const realFetch = globalThis.fetch;
+  globalThis.document = {
+    querySelector: (selector) =>
+      selector.includes('repository_public') ? { content: 'true' } : null,
+  };
+  // The pack holds only the tip; its parent is neither in the pack nor known,
+  // so splicing would draw history floating above a gap.
+  globalThis.fetch = publicFreshenFetch({ snapshotOid: OID, headOid: oidOf(c), packObjects: [c] });
+  try {
+    const source = await openRepoGraph('o', 'r');
+    assert.equal(source.fresh, false);
+    assert.deepEqual(source.heads, [{ name: 'main', oid: OID }]);
+    assert.deepEqual(source.view().commits.map((commit) => commit.oid), [OID]);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete globalThis.document;
   }
 });
 

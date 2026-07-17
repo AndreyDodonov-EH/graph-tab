@@ -58,27 +58,93 @@
   font-size: 13px;
   color: var(--fgColor-default, #1f2328);
 }
-.ggt-header {
+/* The GitHub-style framed box: muted toolbar (title + counts subtitle +
+   actions), optional banners, the graph, and a muted pagination footer. */
+.ggt-shell {
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.ggt-toolbar {
   display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding-bottom: 12px;
-  margin-bottom: 4px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  min-height: 52px;
+  padding: 8px 16px;
+  background: var(--bgColor-muted, #f6f8fa);
   border-bottom: 1px solid var(--borderColor-default, #d1d9e0);
 }
 .ggt-title {
   margin: 0;
   font-size: 16px;
+  line-height: 22px;
   font-weight: 600;
 }
-.ggt-meta {
+.ggt-subtitle {
+  display: block;
+  font-size: 12px;
   color: var(--fgColor-muted, #59636e);
+}
+.ggt-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ggt-btn {
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 26px;
+  color: var(--button-default-fgColor-rest, #24292f);
+  background: var(--button-default-bgColor-rest, #f6f8fa);
+  border: 1px solid var(--button-default-borderColor-rest, #d0d7de);
+  border-radius: 6px;
+  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
+  cursor: pointer;
+}
+.ggt-btn:hover:enabled {
+  background: var(--button-default-bgColor-hover, #eff2f5);
+}
+.ggt-btn:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+.ggt-btn:focus-visible,
+.ggt-fresh input:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: 2px;
+}
+.ggt-pill {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fgColor-muted, #59636e);
+  background: var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2));
+  border-radius: 999px;
+  cursor: default;
+}
+.ggt-pill-fresh {
+  color: var(--fgColor-success, #1a7f37);
+  background: var(--bgColor-success-muted, rgba(46, 160, 67, 0.15));
+}
+.ggt-banner {
+  padding: 8px 16px;
+  font-size: 12px;
+  background: var(--bgColor-attention-muted, #fff8c5);
+  border-bottom: 1px solid var(--borderColor-default, #d1d9e0);
+}
+.ggt-banner-error {
+  color: var(--fgColor-danger, #d1242f);
+  background: var(--bgColor-danger-muted, #ffebe9);
 }
 .ggt-fresh {
   display: flex;
   align-items: center;
   gap: 5px;
-  margin-left: auto;
   font-size: 12px;
   color: var(--fgColor-muted, #59636e);
   white-space: nowrap;
@@ -89,13 +155,16 @@
 /* Column widths are --ggt-col-* variables set by columns.js; the header
    dividers drag them live. Grips sit on the column boundaries: author/date/
    sha are right-anchored (message flexes), so grips position from the right
-   by summing the widths of everything to their right plus the 12px gaps. */
+   by summing the widths of everything to their right plus the 12px gaps.
+   Header and rows carry 8px inner padding so text clears the shell border;
+   grips are anchored to the padding box, so their offsets include that 8px. */
 .ggt-head {
   position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   height: 26px;
+  padding: 0 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--fgColor-muted, #59636e);
@@ -104,7 +173,10 @@
 .ggt-h-graph {
   flex: none;
   width: calc(var(--ggt-col-graph, 20px) - 12px);
-  overflow: hidden;
+  white-space: nowrap;
+  /* May overhang into the 12px column gap on narrow graph columns; the
+     40px drag minimum keeps it from ever reaching the Description label. */
+  overflow: visible;
 }
 .ggt-h-desc {
   flex: 1 1 auto;
@@ -136,16 +208,16 @@
   background: var(--fgColor-accent, #0969da);
 }
 .ggt-grip-graph {
-  left: calc(var(--ggt-col-graph, 20px) - 8.5px);
+  left: calc(var(--ggt-col-graph, 20px) - 0.5px);
 }
 .ggt-grip-author {
-  right: calc(var(--ggt-col-sha, 64px) + var(--ggt-col-date, 88px) + var(--ggt-col-author, 150px) + 25.5px);
+  right: calc(var(--ggt-col-sha, 64px) + var(--ggt-col-date, 88px) + var(--ggt-col-author, 150px) + 33.5px);
 }
 .ggt-grip-date {
-  right: calc(var(--ggt-col-sha, 64px) + var(--ggt-col-date, 88px) + 13.5px);
+  right: calc(var(--ggt-col-sha, 64px) + var(--ggt-col-date, 88px) + 21.5px);
 }
 .ggt-grip-sha {
-  right: calc(var(--ggt-col-sha, 64px) + 1.5px);
+  right: calc(var(--ggt-col-sha, 64px) + 9.5px);
 }
 
 .ggt-wrap {
@@ -154,7 +226,7 @@
 .ggt-svg {
   position: absolute;
   top: 0;
-  left: 0;
+  left: 8px;
   max-width: calc(var(--ggt-col-graph, 20px) - 8px); /* crops when narrowed */
   pointer-events: none;
 }
@@ -163,8 +235,8 @@
   align-items: center;
   gap: 12px;
   height: 28px;
-  padding-left: var(--ggt-col-graph, 20px);
-  border-radius: 6px;
+  padding-left: calc(var(--ggt-col-graph, 20px) + 8px);
+  padding-right: 8px;
 }
 .ggt-row:hover {
   background: var(--bgColor-muted, #f6f8fa);
@@ -222,6 +294,14 @@ a.ggt-author:hover {
   border-radius: 50%;
   flex: none;
 }
+.ggt-avatar-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: var(--fgColor-muted, #59636e);
+  background: var(--bgColor-neutral-muted, rgba(175, 184, 193, 0.2));
+}
 .ggt-date {
   flex: none;
   width: var(--ggt-col-date, 88px);
@@ -244,31 +324,31 @@ a.ggt-author:hover {
   color: var(--fgColor-accent, #0969da);
 }
 
-.ggt-more {
-  display: block;
-  width: 100%;
-  max-width: 1232px;
-  margin: 12px auto 0;
-  padding: 6px;
-  font-size: 13px;
-  color: var(--fgColor-default, #1f2328);
-  background: var(--button-default-bgColor-rest, #f6f8fa);
-  border: 1px solid var(--borderColor-default, #d1d9e0);
-  border-radius: 6px;
-  cursor: pointer;
+.ggt-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--bgColor-muted, #f6f8fa);
+  border-top: 1px solid var(--borderColor-default, #d1d9e0);
 }
-.ggt-more:hover:enabled {
-  background: var(--button-default-bgColor-hover, #eff2f5);
-}
-.ggt-more:disabled {
-  cursor: default;
-  opacity: 0.7;
+.ggt-footer-count {
+  font-size: 12px;
+  color: var(--fgColor-muted, #59636e);
 }
 
 .ggt-status {
   padding: 48px 24px;
   text-align: center;
   color: var(--fgColor-muted, #59636e);
+}
+.ggt-status-detail {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.ggt-retry {
+  margin-top: 14px;
 }
 .ggt-progress {
   width: 220px;
@@ -291,6 +371,26 @@ a.ggt-author:hover {
 }
 .ggt-error {
   color: var(--fgColor-danger, #d1242f);
+}
+
+/* Narrow screens: drop the author and sha columns (and the grips whose
+   positions depend on the hidden widths); the message column keeps flexing. */
+@media (max-width: 900px) {
+  .ggt-author,
+  .ggt-sha,
+  .ggt-grip-author,
+  .ggt-grip-date,
+  .ggt-grip-sha {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  .ggt-root {
+    padding: 8px 8px 32px;
+  }
+  .ggt-toolbar {
+    align-items: flex-start;
+  }
 }
 
 /* Post-install welcome tour (welcome.js). The spotlight is a hole punched
