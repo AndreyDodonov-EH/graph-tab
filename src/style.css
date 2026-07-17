@@ -292,3 +292,64 @@ a.ggt-author:hover {
 .ggt-error {
   color: var(--fgColor-danger, #d1242f);
 }
+
+/* Post-install welcome tour (welcome.js). The spotlight is a hole punched
+   with an oversized box-shadow; the card sits below it, both fixed. */
+.ggt-welcome {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+}
+.ggt-welcome-spot {
+  position: absolute;
+  border-radius: 8px;
+  box-shadow: 0 0 0 200vmax rgba(1, 4, 9, 0.55);
+  pointer-events: none;
+}
+.ggt-welcome-card {
+  position: absolute;
+  box-sizing: border-box;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  padding: 16px;
+  font-size: 13px;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--overlay-bgColor, var(--bgColor-default, #ffffff));
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 12px;
+  box-shadow: var(--shadow-floating-large, 0 8px 24px rgba(66, 74, 83, 0.2));
+}
+.ggt-welcome-card h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.ggt-welcome-card p {
+  margin: 0 0 12px;
+  line-height: 1.5;
+  color: var(--fgColor-muted, #59636e);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.ggt-welcome-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ggt-welcome-count {
+  font-size: 12px;
+  color: var(--fgColor-muted, #59636e);
+}
+.ggt-welcome-btn {
+  padding: 5px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--button-primary-fgColor-rest, #ffffff);
+  background: var(--button-primary-bgColor-rest, #1f883d);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ggt-welcome-btn:hover {
+  background: var(--button-primary-bgColor-hover, #1c8139);
+}

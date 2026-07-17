@@ -8,6 +8,7 @@ import { ensureTab, markTabSelected, markTabDeselected, repoNav, TAB_ID } from '
 import { openRepoGraph, privateFreshEnabled, setPrivateFreshEnabled } from './data.js';
 import { layout } from './layout.js';
 import { render, renderStatus } from './render.js';
+import { maybeWelcome } from './welcome.js';
 
 const VIEW_ID = 'ggt-view';
 const GRAPH_HASH = '#graph';
@@ -82,6 +83,7 @@ async function loadAndRender(view, repoRef) {
       );
     }
     rerender(view);
+    maybeWelcome();
   } catch (error) {
     source = null;
     renderStatus(view, String(error.message || error), true);
