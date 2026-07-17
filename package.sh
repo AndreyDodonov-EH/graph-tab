@@ -1,22 +1,30 @@
 #!/usr/bin/env bash
 #
-# Builds a Chrome deployment zip containing only the files needed to run the
+# Builds store deployment zips containing only the files needed to run the
 # extension: PNG icons, the src/ directory, loader.js, background.js and
-# manifest.json.
+# a browser-specific manifest.json.
+#
+# Usage: ./package.sh [chrome|firefox|all]
+#   chrome  (default) — Chrome/Edge zip from manifest.json
+#   firefox           — Firefox zip from manifest.firefox.json
+#   all               — both zips
 #
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
+TARGET="${1:-chrome}"
+
+if [[ "$TARGET" != "chrome" && "$TARGET" != "firefox" && "$TARGET" != "all" ]]; then
+  echo "usage: $0 [chrome|firefox|all]" >&2
+  exit 1
+fi
+
 # Read the version from manifest.json (no jq dependency).
 VERSION=$(grep -oE '"version"[[:space:]]*:[[:space:]]*"[^"]+"' manifest.json \
   | head -n1 | grep -oE '[0-9]+(\.[0-9]+)*')
 
-OUT="graph-tab-${VERSION:-unknown}.zip"
-
-# Files/dirs to include in the package.
-FILES=(
-  manifest.json
+ASSETS=(
   loader.js
   background.js
   src
@@ -26,37 +34,82 @@ FILES=(
   icon128.png
 )
 
-# Verify everything exists before packaging.
-for f in "${FILES[@]}"; do
-  if [[ ! -e "$f" ]]; then
-    echo "error: missing required file '$f'" >&2
-    exit 1
-  fi
-done
+verify_assets() {
+  for f in "${ASSETS[@]}"; do
+    if [[ ! -e "$f" ]]; then
+      echo "error: missing required file '$f'" >&2
+      exit 1
+    fi
+  done
+}
 
-rm -f "$OUT"
+create_zip() {
+  local out="$1"
+  local dir="$2"
+  shift 2
+  local -a files=("$@")
 
-# Prefer the `zip` CLI; fall back to Python's zipfile module.
-if command -v zip >/dev/null 2>&1; then
-  # -r recurse into src/, -X strip extra file attributes for a clean archive.
-  zip -r -X "$OUT" "${FILES[@]}"
-else
-  python3 - "$OUT" "${FILES[@]}" <<'PY'
+  rm -f "$out"
+
+  if command -v zip >/dev/null 2>&1; then
+    # -r recurse into src/, -X strip extra file attributes for a clean archive.
+    (cd "$dir" && zip -r -X "$OLDPWD/$out" "${files[@]}")
+  else
+    python3 - "$out" "$dir" "${files[@]}" <<'PY'
 import os
 import sys
 import zipfile
 
-out, *paths = sys.argv[1:]
+out, dir, *paths = sys.argv[1:]
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
     for path in paths:
-        if os.path.isdir(path):
-            for root, _dirs, files in os.walk(path):
+        full = os.path.join(dir, path)
+        if os.path.isdir(full):
+            for root, _dirs, files in os.walk(full):
                 for name in files:
-                    full = os.path.join(root, name)
-                    zf.write(full, full)
+                    fp = os.path.join(root, name)
+                    zf.write(fp, os.path.relpath(fp, dir))
         else:
-            zf.write(path, path)
+            zf.write(full, path)
 PY
-fi
+  fi
 
-echo "Created $OUT"
+  echo "Created $out"
+}
+
+package_chrome() {
+  verify_assets
+  if [[ ! -f manifest.json ]]; then
+    echo "error: missing manifest.json" >&2
+    exit 1
+  fi
+
+  create_zip "graph-tab-${VERSION:-unknown}.zip" "." manifest.json "${ASSETS[@]}"
+}
+
+package_firefox() {
+  verify_assets
+  if [[ ! -f manifest.firefox.json ]]; then
+    echo "error: missing manifest.firefox.json" >&2
+    exit 1
+  fi
+
+  local staging
+  staging=$(mktemp -d)
+  cp manifest.firefox.json "$staging/manifest.json"
+  for f in "${ASSETS[@]}"; do
+    cp -r "$f" "$staging/"
+  done
+
+  create_zip "graph-tab-firefox-${VERSION:-unknown}.zip" "$staging" manifest.json "${ASSETS[@]}"
+  rm -rf "$staging"
+}
+
+case "$TARGET" in
+  chrome) package_chrome ;;
+  firefox) package_firefox ;;
+  all)
+    package_chrome
+    package_firefox
+    ;;
+esac

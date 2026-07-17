@@ -6,6 +6,7 @@ module.exports = {
     '*.zip',
     'web-ext-artifacts',
     'web-ext-config.cjs',
+    'manifest.firefox.json',
     'package.sh',
     'README.md',
     'icon.svg',
