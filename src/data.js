@@ -12,6 +12,8 @@
 // le-git-graph/NETWORK_GRAPH_RENDERER.md):
 //   - the chunk array is oldest-first; meta.dates.length is the total count,
 //     so the newest window is [total - N, total);
+//   - the chunk end parameter is INCLUSIVE (start=0&end=2 returns 3 commits;
+//     an end past the array is clamped), so half-open windows send end - 1;
 //   - meta/chunk cover the whole fork network with interleaved commits, and
 //     the only correct way to isolate the focused repo is reachability from
 //     meta.users[0].heads (author/owner/block filtering is wrong);
@@ -44,10 +46,13 @@ export function setPrivateFreshEnabled(on) {
 }
 
 // The page itself says which it is; content scripts can read it directly.
+// Unknown visibility counts as private: the public path must never probe a
+// private repo's git endpoints, where the anonymous 401 could surface the
+// browser's Basic-auth dialog. Every public repo page carries the tag.
 function isPrivateRepo() {
   return (
-    typeof document !== 'undefined' &&
-    document.querySelector('meta[name="octolytics-dimension-repository_public"]')?.content === 'false'
+    typeof document === 'undefined' ||
+    document.querySelector('meta[name="octolytics-dimension-repository_public"]')?.content !== 'true'
   );
 }
 
@@ -68,6 +73,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function fetchJson(url, pendingDelays = []) {
   let pendingWaits = 0;
+  let rateLimited = false;
   for (let attempt = 0; ; ) {
     let response = null;
     try {
@@ -86,6 +92,7 @@ async function fetchJson(url, pendingDelays = []) {
         await sleep(pendingDelays[pendingWaits++]);
         continue;
       }
+      rateLimited = response.status === 429;
       if (response.ok && (response.headers.get('content-type') || '').includes('json')) {
         try {
           return await response.json();
@@ -94,18 +101,25 @@ async function fetchJson(url, pendingDelays = []) {
         }
       }
     }
-    if (attempt >= RETRY_DELAYS_MS.length) return null;
+    if (attempt >= RETRY_DELAYS_MS.length) {
+      if (rateLimited) {
+        throw new Error('GitHub is rate-limiting graph requests — try again in a minute.');
+      }
+      return null;
+    }
     await sleep(RETRY_DELAYS_MS[attempt++]);
   }
 }
 
 // "2025-10-31 21:09:46" (chunk format), ISO strings, or epoch numbers.
+// Unparseable dates come back as null — the UI shows "—" rather than
+// pretending the commit was authored "now".
 function parseDate(value) {
   if (typeof value === 'number') {
     return new Date(value < 1e12 ? value * 1000 : value);
   }
   const date = new Date(String(value || '').replace(' ', 'T'));
-  return isNaN(date.getTime()) ? new Date() : date;
+  return isNaN(date.getTime()) ? null : date;
 }
 
 // idx is the commit's absolute position in GitHub's oldest-first network
@@ -170,6 +184,23 @@ function reachableFrom(byOid, headOids) {
   return reachable;
 }
 
+// True when every path from `start` through the `fetched` map reaches known
+// history (per `isKnown`) instead of dead-ending at an oid the pack did not
+// contain — i.e. the fetched commits really close the gap to the snapshot.
+function walkCloses(start, fetched, isKnown) {
+  const stack = [start];
+  const seen = new Set();
+  while (stack.length > 0) {
+    const oid = stack.pop();
+    if (seen.has(oid) || isKnown(oid)) continue;
+    seen.add(oid);
+    const commit = fetched.get(oid);
+    if (!commit) return false;
+    stack.push(...commit.parents);
+  }
+  return true;
+}
+
 // Parents-first order, so spliced commits get ascending idx (children newer).
 function topoOrder(commits) {
   const byOid = new Map(commits.map((c) => [c.oid, c]));
@@ -218,6 +249,16 @@ async function freshen(owner, repo, heads, byOid, nextIdx, onProgress) {
     if (wants.length > 0) {
       const haves = heads.map((h) => h.oid);
       const missing = await fetchMissingCommits(owner, repo, wants, haves, WINDOW);
+      // The deepen bound can truncate the walk (snapshot far behind, rewritten
+      // branch): splicing then would render commits floating above an
+      // invisible gap. Unless every new head connects down to known history,
+      // keep the stale-but-consistent snapshot instead.
+      const fetched = new Map(missing.map((c) => [c.oid, c]));
+      const snapOids = new Set(heads.map((h) => h.oid));
+      const isKnown = (oid) => byOid.has(oid) || snapOids.has(oid);
+      if (!wants.every((want) => walkCloses(want, fetched, isKnown))) {
+        return { heads, fresh: false };
+      }
       // git objects carry name+email, not GitHub identities; recover login and
       // avatar from snapshot commits by the same author, else avatar by email.
       const identities = new Map();
@@ -269,9 +310,11 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
   const total = Array.isArray(meta.dates) ? meta.dates.length : 0;
   let heads = focusedHeads(meta, owner, repo);
   const byOid = new Map();
+  let failedWindows = 0;
 
+  // Windows are half-open [start, end), but the endpoint's end is inclusive.
   async function fetchWindow(start, end) {
-    const params = new URLSearchParams({ nethash: meta.nethash, start: String(start), end: String(end) });
+    const params = new URLSearchParams({ nethash: meta.nethash, start: String(start), end: String(end - 1) });
     const chunk = await fetchJson(`${base}/network/chunk?${params}`);
     if (!chunk || !Array.isArray(chunk.commits)) return false;
     chunk.commits.forEach((raw, i) => {
@@ -296,6 +339,7 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
     heads,
     fresh: freshened.fresh,
     private: isPrivateRepo(),
+    total,
 
     // filtered === false means no focused head landed in the loaded window,
     // so the raw fork network is shown rather than nothing.
@@ -308,14 +352,23 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
       return { commits, filtered };
     },
 
+    loaded: () => byOid.size,
     hasMore: () => loadedStart > 0,
+    olderCount: () => Math.min(WINDOW, loadedStart),
+    failedWindows: () => failedWindows,
 
     async loadOlder() {
       if (loadedStart <= 0) return;
       const olderEnd = loadedStart;
       const olderStart = Math.max(0, olderEnd - WINDOW);
       loadedStart = olderStart; // advance even on failure so a bad window can't loop
-      await fetchWindow(olderStart, olderEnd);
+      let ok = false;
+      try {
+        ok = await fetchWindow(olderStart, olderEnd);
+      } catch {
+        // counted below; the view keeps its consistent loaded set
+      }
+      if (!ok) failedWindows++; // surfaced as a banner, not silently skipped
     },
   };
 }

@@ -24,8 +24,9 @@ Works on Chrome and Edge, Firefox is WiP.
 ## How it works
 
 - **Data** (`src/data.js`): GitHub's undocumented network-graph endpoints
-  (`/{owner}/{repo}/network/meta` + `network/chunk`), fetched newest-window
-  first, paginated by "Load older commits". The endpoints return the entire
+  (`/{owner}/{repo}/network/meta` + `network/chunk`; the chunk `end` bound is
+  inclusive — verified live), fetched newest-window first, paginated by the
+  "Load older commits" footer. The endpoints return the entire
   fork network with interleaved commits, so the focused repository is isolated
   by **reachability** from `meta.users[0].heads` (author/owner/block filtering
   is provably wrong — see the findings doc).
