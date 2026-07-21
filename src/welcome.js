@@ -89,9 +89,9 @@ function show(index) {
   document.body.appendChild(root);
 
   // Position with the card's real height (it varies per step and font), all
-  // in the same task so nothing paints half-placed: cap the spotlight so the
-  // card fits below it, and clamp the card on screen — the tour freezes
-  // scrolling, so a button below the fold would be unreachable.
+  // in the same task so nothing paints half-placed. Keep every card beside
+  // the first step's Graph-tab target; anchoring the second card below the
+  // much taller graph can put its button beyond the frozen viewport.
   const cardGap = 12;
   const cardHeight = card.offsetHeight;
   const height = Math.min(
@@ -104,11 +104,14 @@ function show(index) {
     width: rect.width + 2 * step.pad + 'px',
     height: height + 2 * step.pad + 'px',
   });
+  const anchor = STEPS[0].target();
+  const anchorRect = anchor?.getBoundingClientRect() ?? rect;
+  const anchorPad = STEPS[0].pad;
   const cardTop = Math.max(
     16,
-    Math.min(rect.top + height + step.pad + cardGap, innerHeight - cardHeight - 16),
+    Math.min(anchorRect.bottom + anchorPad + cardGap, innerHeight - cardHeight - 16),
   );
-  const cardLeft = Math.max(16, Math.min(rect.left - 8, innerWidth - 376 - 16));
+  const cardLeft = Math.max(16, Math.min(anchorRect.left - 8, innerWidth - 376 - 16));
   Object.assign(card.style, {
     top: cardTop + 'px',
     left: cardLeft + 'px',
