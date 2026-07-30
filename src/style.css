@@ -259,6 +259,9 @@
 a.ggt-ref:hover {
   text-decoration: underline;
 }
+.ggt-tag {
+  border-style: dashed;
+}
 .ggt-msg {
   flex: 1 1 auto;
   min-width: 0;

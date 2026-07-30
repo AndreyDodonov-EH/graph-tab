@@ -104,18 +104,26 @@ test('lsRefs parses pkt-line ref advertisement', async () => {
   const body =
     pkt('df7f2341aedd9e596c3709b41b0a25606f4e2298 refs/heads/main\n') +
     pkt('fdbe98a9262f0545c8cbbfdbfa08a5a49bcacf08 refs/heads/feat/a b\n') + // symref hint after space is ignored
+    pkt(`${'1'.repeat(40)} refs/tags/v1.0.0 peeled:${'2'.repeat(40)}\n`) + // annotated: peeled commit wins
+    pkt(`${'3'.repeat(40)} refs/tags/light\n`) + // lightweight: its own oid is the commit
     '0000';
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     assert.equal(url, '/o/r.git/git-upload-pack');
     assert.match(init.body, /command=ls-refs/);
+    assert.match(init.body, /peel\n/);
+    assert.match(init.body, /ref-prefix refs\/tags\//);
     return new Response(Buffer.from(body));
   };
   try {
-    const heads = await lsRefs('o', 'r');
+    const { heads, tags } = await lsRefs('o', 'r');
     assert.deepEqual(heads, [
       { name: 'main', oid: 'df7f2341aedd9e596c3709b41b0a25606f4e2298' },
       { name: 'feat/a', oid: 'fdbe98a9262f0545c8cbbfdbfa08a5a49bcacf08' },
+    ]);
+    assert.deepEqual(tags, [
+      { name: 'v1.0.0', oid: '2'.repeat(40) },
+      { name: 'light', oid: '3'.repeat(40) },
     ]);
   } finally {
     globalThis.fetch = realFetch;

@@ -34,10 +34,13 @@ Works on Chrome and Edge, Firefox is WiP.
   snapshot lags pushes by minutes to hours, so branch heads are re-read live
   and missing commits spliced in. Public repos: git smart-HTTP v2 on
   `/{owner}/{repo}.git` (ls-refs + a `tree:0`-filtered fetch, parsed by an
-  own pack reader and RFC-1951 inflater). Private repos reject anonymous git,
+  own pack reader and RFC-1951 inflater). The same ls-refs call also returns
+  tags (`peel` resolves annotated tags to their commits), rendered as dashed
+  chips next to the branch chips. Private repos reject anonymous git,
   so an opt-in header checkbox ("fetch fresh commits") walks
-  `/latest-commit/{ref}` and `/commit/{oid}` (as JSON via `Accept`) instead.
-  That costs one request per missing commit, capped and per branch, which is
+  `/latest-commit/{ref}` and `/commit/{oid}` (as JSON via `Accept`) instead,
+  and resolves tags through `/refs?type=tag` + `/latest-commit/{tag}`.
+  That costs one request per missing commit (and per tag, capped), which is
   why it is off by default.
   Fetched commits are immutable, so they are cached (localStorage, keyed by
   oid) and never re-fetched.

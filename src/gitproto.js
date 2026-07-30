@@ -45,19 +45,31 @@ async function uploadPack(owner, repo, lines) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-/** Exact branch heads, straight from the git server: [{ name, oid }]. */
+/**
+ * Exact branch heads and tags, straight from the git server:
+ * { heads: [{ name, oid }], tags: [{ name, oid }] }. `peel` makes the server
+ * append "peeled:<oid>" to annotated-tag lines, so every tag oid here is the
+ * commit it points at, never the tag object.
+ */
 export async function lsRefs(owner, repo) {
   const data = await uploadPack(owner, repo, [
-    pktLine('command=ls-refs\n'), '0001', pktLine('ref-prefix refs/heads/\n'), '0000',
+    pktLine('command=ls-refs\n'), '0001', pktLine('peel\n'),
+    pktLine('ref-prefix refs/heads/\n'), pktLine('ref-prefix refs/tags/\n'), '0000',
   ]);
   const heads = [];
+  const tags = [];
   for (const line of pktLines(data)) {
-    const [oid, name] = decoder.decode(line).trim().split(' ');
-    if (name && name.startsWith('refs/heads/') && /^[0-9a-f]{40}$/.test(oid)) {
+    const [oid, name, ...attrs] = decoder.decode(line).trim().split(' ');
+    if (!name || !/^[0-9a-f]{40}$/.test(oid)) continue;
+    if (name.startsWith('refs/heads/')) {
       heads.push({ name: name.slice('refs/heads/'.length), oid });
+    } else if (name.startsWith('refs/tags/')) {
+      const peeled = attrs.find((attr) => attr.startsWith('peeled:'))?.slice('peeled:'.length);
+      const target = peeled && /^[0-9a-f]{40}$/.test(peeled) ? peeled : oid;
+      tags.push({ name: name.slice('refs/tags/'.length), oid: target });
     }
   }
-  return heads;
+  return { heads, tags };
 }
 
 /**

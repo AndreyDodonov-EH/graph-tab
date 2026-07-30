@@ -131,13 +131,13 @@ function avatarFallback(commit) {
 
 /**
  * Render the graph view into `container` (cleared first).
- * model: { owner, repo, commits, graph, heads, fresh, filtered, total,
+ * model: { owner, repo, commits, graph, heads, tags, fresh, filtered, total,
  *   loaded, olderCount, failedWindows, hasMore, onLoadOlder, onRefresh,
  *   private, privateFresh, onToggleFresh }
  */
 export function render(container, model) {
   const {
-    owner, repo, commits, graph, heads, fresh, filtered, hasMore,
+    owner, repo, commits, graph, heads, tags, fresh, filtered, hasMore,
     total, loaded, olderCount, failedWindows, onLoadOlder, onRefresh,
     private: priv, privateFresh, onToggleFresh,
   } = model;
@@ -148,20 +148,26 @@ export function render(container, model) {
     refsByOid.get(head.oid).push(head.name);
   }
   const headOids = new Set(refsByOid.keys());
+  const tagsByOid = new Map();
+  for (const tag of tags) {
+    if (!tagsByOid.has(tag.oid)) tagsByOid.set(tag.oid, []);
+    tagsByOid.get(tag.oid).push(tag.name);
+  }
 
   const root = el('div', 'ggt-root');
   const grandTotal = Math.max(total, loaded);
   const { shell, toolbar } = buildShell(
     `${owner}/${repo} · ${loaded} of ${grandTotal} commits loaded · ` +
-      `${heads.length} ${heads.length === 1 ? 'branch' : 'branches'}`,
+      `${heads.length} ${heads.length === 1 ? 'branch' : 'branches'}` +
+      (tags.length > 0 ? ` · ${tags.length} ${tags.length === 1 ? 'tag' : 'tags'}` : ''),
   );
 
   const actions = el('div', 'ggt-actions');
   if (priv) {
     const label = el('label', 'ggt-fresh');
     label.title =
-      "Show the latest commits instead of GitHub's cached snapshot. " +
-      'On a private repository this takes one small request per new commit, ' +
+      "Show the latest commits, plus tags, instead of GitHub's cached snapshot. " +
+      'On a private repository this takes one small request per new commit and per tag, ' +
       'so the first load can take a while; fetched commits are cached on this device.';
     const box = el('input');
     box.type = 'checkbox';
@@ -218,11 +224,20 @@ export function render(container, model) {
     const row = el('div', 'ggt-row');
 
     const refs = refsByOid.get(commit.oid);
-    if (refs) {
+    const tagNames = tagsByOid.get(commit.oid);
+    if (refs || tagNames) {
       const refsBox = el('span', 'ggt-refs');
-      for (const name of refs) {
+      for (const name of refs || []) {
         const chip = el('a', 'ggt-ref', name);
         chip.href = `/${owner}/${repo}/tree/${name.split('/').map(encodeURIComponent).join('/')}`;
+        chip.style.color = colorOf(graph.nodes[i].color);
+        chip.style.borderColor = 'currentColor';
+        refsBox.appendChild(chip);
+      }
+      for (const name of tagNames || []) {
+        const chip = el('a', 'ggt-ref ggt-tag', name);
+        chip.href = `/${owner}/${repo}/releases/tag/${encodeURIComponent(name)}`;
+        chip.title = `tag: ${name}`;
         chip.style.color = colorOf(graph.nodes[i].color);
         chip.style.borderColor = 'currentColor';
         refsBox.appendChild(chip);

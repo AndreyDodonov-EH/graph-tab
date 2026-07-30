@@ -19,6 +19,10 @@
 
 const MAX_PAGES = 100;
 
+// Tags cost one /latest-commit request each (names come bare from /refs),
+// so the list is capped to the newest entries the endpoint returns first.
+const MAX_TAGS = 30;
+
 const JSON_HEADERS = { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
 
 // Commits are immutable, so an oid-keyed localStorage cache never goes
@@ -67,6 +71,37 @@ async function latestOid(base, ref) {
   const { oid } = await response.json();
   if (!/^[0-9a-f]{40}$/.test(oid || '')) throw new Error('latest-commit: no oid');
   return oid;
+}
+
+/**
+ * Tags for a private repo over the same session-cookie web endpoints:
+ * [{ name, oid }]. `/refs?type=tag` returns bare names (newest first);
+ * `/latest-commit/{tag}` resolves each one and peels annotated tags to the
+ * commit they point at (verified against `git ls-remote 'v*^{}'`). Tags can
+ * be re-pointed, so nothing here is cached. A tag that fails to resolve is
+ * dropped rather than failing the batch.
+ */
+export async function webTags(owner, repo) {
+  const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  const response = await fetch(`${base}/refs?type=tag`, {
+    headers: JSON_HEADERS,
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error(`refs: HTTP ${response.status}`);
+  const { refs } = await response.json();
+  if (!Array.isArray(refs)) return [];
+  const tags = await Promise.all(
+    refs
+      .filter((name) => typeof name === 'string' && name)
+      .slice(0, MAX_TAGS)
+      .map((name) =>
+        latestOid(base, name)
+          .then((oid) => (oid ? { name, oid } : null))
+          .catch(() => null),
+      ),
+  );
+  return tags.filter(Boolean);
 }
 
 // payload.commit out of an HTML commit page: several react-app.embeddedData
