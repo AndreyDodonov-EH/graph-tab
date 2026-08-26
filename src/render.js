@@ -125,18 +125,27 @@ function buildShell(subtitle) {
 
 // The branch picker: which branches the graph draws.
 //
-// Copied in behaviour from GitHub's own repository dropdown (Primer's
-// FilteredActionList): an anchor button, a filter box, and a list of
-// role="option" rows whose selection lives in a leading slot. Two things
-// matter beyond the looks:
+// This is GitHub's own repository dropdown, reused rather than imitated: the
+// markup below carries the Primer React class names (prc-Overlay, the
+// TextInput wrapper, prc-ActionList with its selection slot, prc-Label) so
+// GitHub's stylesheet — already loaded on every repo page — styles it, and it
+// tracks GitHub's look automatically. Two things matter beyond the looks:
 //
-//   - The list is an overlay on document.body, positioned against the
-//     button, not a child of the toolbar. Inside the graph shell it would be
-//     part of the layout (and clipped by the shell's overflow); on the body
-//     it floats over the page like GitHub's own menus do.
-//   - A click applies straight away. There is no Apply, no bulk-clear and no
-//     close button: the two rows at the top are the bulk actions, and
-//     clicking outside or pressing Escape closes the menu.
+//   - The overlay is fixed-positioned on document.body, anchored to the
+//     button. Inside the graph shell it would be part of the toolbar's layout
+//     and clipped by the shell's overflow; on the body it floats like
+//     GitHub's own menus.
+//   - A click applies straight away. No Apply and no close button: the two
+//     rows at the top are the bulk actions, and an outside click or Escape
+//     closes the menu.
+//
+// Primer's hashed class names change with its releases, and the extension's
+// manifest-injected stylesheet only refreshes when the extension itself is
+// reloaded (the modules refresh on every page load). So the geometry the
+// dropdown cannot do without — position, list reset, row layout, the
+// selection check — is carried as a small stylesheet injected right here,
+// from JS, which can never be stale. It is written so that when Primer's
+// classes do match, Primer wins on the details (hover, dividers, colours).
 //
 // Applying re-renders the whole view, which rebuilds this control, so the
 // open state and the filter text live at module scope and are restored.
@@ -145,11 +154,86 @@ const PANEL_WIDTH = 320;
 let panelOpen = false;
 let panelFilter = '';
 let livePanel = null;
-// Listeners the open overlay puts on document/window. Applying a pick
-// re-renders the view and builds a fresh control, so the previous one has to
-// hand these back — a stale outside-click handler whose panel is already
-// detached sees every click as "outside" and shuts the new menu.
+// Listeners the open overlay puts on document/window. A stale outside-click
+// handler whose panel is already detached sees every click as "outside" and
+// shuts the new menu, so the previous instance has to hand these back.
 let detachPanel = null;
+
+// Primer React's class names, verbatim from github.com. If GitHub renames
+// one, that element falls back to the ggt-* rules below — the layout holds,
+// only the finer Primer polish is lost until the name is updated here.
+const PRC = {
+  overlay: 'prc-Overlay-Overlay-jfs-T',
+  heading: 'prc-Heading-Heading-MtWFE',
+  inputWrap: 'TextInput-wrapper prc-components-TextInputWrapper-Hpdqi prc-components-TextInputBaseWrapper-wY-n0',
+  input: 'prc-components-Input-IwWrt',
+  list: 'prc-ActionList-ActionList-rPFF2',
+  item: 'prc-ActionList-ActionListItem-So4vC',
+  content: 'prc-ActionList-ActionListContent-KBb8-',
+  spacer: 'prc-ActionList-Spacer-4tR2m',
+  selection: 'prc-ActionList-LeadingAction-hbWbh prc-ActionList-VisualWrap-bdCsS',
+  checkmark: 'prc-ActionList-SingleSelectCheckmark-zMd8d',
+  leading: 'prc-ActionList-LeadingVisual-NBr28 prc-ActionList-VisualWrap-bdCsS',
+  sub: 'prc-ActionList-ActionListSubContent-gKsFp',
+  label: 'prc-ActionList-ItemLabel-81ohH',
+  pill: 'prc-Label-Label-qG-Zu',
+  button: 'prc-Button-ButtonBase-9n-Xk',
+  buttonContent: 'prc-Button-ButtonContent-Iohp5',
+  buttonVisual: 'prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq',
+  buttonLabel: 'prc-Button-Label-FWkx3',
+};
+
+const PICKER_STYLE_ID = 'ggt-picker-style';
+const PICKER_CSS = `
+.ggt-panel { position: fixed; z-index: 1000; width: ${PANEL_WIDTH}px; display: flex; flex-direction: column;
+  font-size: 14px; color: var(--fgColor-default, #1f2328);
+  background: var(--overlay-bgColor, var(--bgColor-default, #fff)); border-radius: 12px;
+  box-shadow: var(--borderColor-default, rgba(209,217,224,.25)) 0 0 0 1px, rgba(37,41,46,.04) 0 6px 12px -3px, rgba(37,41,46,.12) 0 6px 18px 0; }
+.ggt-panel[hidden] { display: none; }
+.ggt-panel:not([hidden]) { opacity: 1; visibility: visible; }
+.ggt-panel[aria-busy="true"] { pointer-events: none; }
+.ggt-panel-head { display: flex; align-items: center; min-height: 40px; padding: 8px 16px 4px; }
+.ggt-panel-head h2 { margin: 0; font-size: 14px; font-weight: 600; line-height: 20px; }
+.ggt-panel-filter { padding: 4px 16px 8px; }
+.ggt-panel-filter > span { display: inline-flex; align-items: center; width: 100%; min-height: 32px; padding: 0 12px; gap: 8px;
+  background: var(--bgColor-default, #fff); border: 1px solid var(--control-borderColor-rest, #d1d9e0); border-radius: 6px; box-sizing: border-box; }
+.ggt-panel-filter > span:focus-within { border-color: var(--focus-outlineColor, #0969da); box-shadow: inset 0 0 0 1px var(--focus-outlineColor, #0969da); }
+.ggt-panel-filter svg { color: var(--fgColor-muted, #59636e); flex: none; }
+.ggt-panel-filter input { flex: 1; min-width: 0; padding: 0; font: inherit; font-size: 14px; color: inherit; background: none; border: 0; outline: none; }
+.ggt-panel ul { flex: 1; min-height: 0; margin: 0; padding: 8px; overflow-y: auto; list-style: none; }
+.ggt-panel li[role="option"] { position: relative; display: block; list-style: none; border-radius: 6px; cursor: pointer; }
+.ggt-panel li[role="option"] > div { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 6px 8px; box-sizing: border-box; }
+.ggt-panel li[role="option"]:hover, .ggt-panel li[role="option"]:focus-visible { background: var(--control-transparent-bgColor-hover, rgba(129,139,152,.12)); outline: none; }
+.ggt-panel li[aria-disabled="true"] { cursor: default; opacity: .55; }
+.ggt-panel li[role="option"] [data-component="ActionList.Selection"] { display: flex; flex: none; width: 16px; }
+.ggt-panel li[aria-selected="false"] [data-component="ActionList.Selection"] svg { visibility: hidden; }
+.ggt-panel li[role="option"] [data-component="ActionList.LeadingVisual"] { display: flex; flex: none; color: var(--fgColor-muted, #59636e); }
+.ggt-panel li[role="option"] [data-component="ActionList.Item.Label"] { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ggt-panel li[role="option"] + li[role="option"] > div::before { content: ""; position: absolute; top: -1px; left: 40px; right: 8px; border-top: 1px solid var(--borderColor-muted, #d1d9e0); }
+.ggt-panel li[role="separator"] { height: 1px; margin: 8px -8px; background: var(--borderColor-muted, #d1d9e0); list-style: none; }
+.ggt-panel .ggt-pill { flex: none; padding: 0 7px; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--fgColor-muted, #59636e);
+  border: 1px solid var(--borderColor-default, #d1d9e0); border-radius: 2em; }
+.ggt-panel .ggt-pill-fetch { color: var(--fgColor-attention, #9a6700); border-color: var(--borderColor-attention-muted, rgba(212,167,44,.4)); }
+.ggt-panel li.ggt-item-busy [data-component="ActionList.Selection"] svg { visibility: visible; animation: ggt-pulse 1s ease-in-out infinite; }
+@keyframes ggt-pulse { 50% { opacity: .25; } }
+.ggt-panel .ggt-list-empty { padding: 12px 8px; color: var(--fgColor-muted, #59636e); list-style: none; }
+.ggt-select-btn { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font: inherit; font-size: 14px; font-weight: 500;
+  color: var(--button-default-fgColor-rest, #25292e); background: var(--button-default-bgColor-rest, #f6f8fa);
+  border: 1px solid var(--button-default-borderColor-rest, #d1d9e0); border-radius: 6px; cursor: pointer; }
+.ggt-select-btn:hover { background: var(--button-default-bgColor-hover, #eff2f5); }
+.ggt-select-btn > span { display: inline-flex; align-items: center; gap: 8px; }
+.ggt-select-btn svg { color: var(--fgColor-muted, #59636e); }
+.ggt-counter { padding: 0 6px; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--fgColor-default, #1f2328);
+  background: var(--bgColor-neutral-muted, rgba(129,139,152,.12)); border-radius: 2em; }
+`;
+
+function ensurePickerStyle() {
+  if (document.getElementById(PICKER_STYLE_ID)) return;
+  const style = el('style');
+  style.id = PICKER_STYLE_ID;
+  style.textContent = PICKER_CSS;
+  document.head.appendChild(style);
+}
 
 /** Drop the overlay — the view is going away and it lives on document.body. */
 export function closeBranchPicker() {
@@ -163,38 +247,74 @@ export function closeBranchPicker() {
 
 function buildBranchPicker(model) {
   const { branches, selected, defaultBranch, onSelectBranches, canFetch } = model;
+  ensurePickerStyle();
   detachPanel?.();
   detachPanel = null;
   livePanel?.remove();
 
+  // Anchor: Primer's default medium Button, with its content slots.
   const counter = el('span', 'ggt-counter', `${selected.size}/${branches.length}`);
-  const button = el('button', 'ggt-btn ggt-select-btn');
+  const button = el('button', `${PRC.button} ggt-select-btn`);
   button.type = 'button';
+  button.setAttribute('data-component', 'Button');
+  button.setAttribute('data-size', 'medium');
+  button.setAttribute('data-variant', 'default');
   button.setAttribute('aria-haspopup', 'listbox');
   button.setAttribute('aria-expanded', 'false');
   button.title = 'Choose which branches the graph draws';
-  button.append(
-    octicon('git-branch'),
-    el('span', 'ggt-select-label', 'Branches'),
-    counter,
-    octicon('triangle-down', 'ggt-select-caret'),
-  );
+  const content = el('span', PRC.buttonContent);
+  content.setAttribute('data-component', 'buttonContent');
+  const leading = el('span', PRC.buttonVisual);
+  leading.setAttribute('data-component', 'leadingVisual');
+  leading.appendChild(octicon('git-branch'));
+  const text = el('span', PRC.buttonLabel, 'Branches');
+  text.setAttribute('data-component', 'text');
+  const trailing = el('span', PRC.buttonVisual);
+  trailing.setAttribute('data-component', 'trailingVisual');
+  trailing.appendChild(octicon('triangle-down'));
+  content.append(leading, text, counter, trailing);
+  button.appendChild(content);
 
-  const panel = el('div', 'ggt-panel');
+  // Overlay: Primer's Overlay, with the heading and TextInput of GitHub's
+  // own repository / branch pickers.
+  const panel = el('div', `${PRC.overlay} ggt-panel`);
   panel.hidden = true;
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'Select branches');
+  // Primer's Overlay starts transparent and its appear animation only runs
+  // once this flag is set — GitHub's own pickers carry it, so it has to be
+  // here too or the menu stays see-through.
+  panel.setAttribute('data-component', 'AnchoredOverlay');
+  panel.setAttribute('data-visibility-visible', '');
   livePanel = panel;
 
-  const filterBox = el('div', 'ggt-filter');
-  filterBox.appendChild(octicon('search', 'ggt-filter-icon'));
-  const filter = el('input', 'ggt-filter-input');
+  const head = el('div', 'ggt-panel-head');
+  const heading = el('h2', PRC.heading, 'Select branches');
+  heading.setAttribute('data-component', 'Heading');
+  head.appendChild(heading);
+  panel.appendChild(head);
+
+  const filterBox = el('div', 'ggt-panel-filter');
+  const wrap = el('span', PRC.inputWrap);
+  wrap.setAttribute('data-component', 'TextInput');
+  wrap.setAttribute('data-leading-visual', 'true');
+  const icon = el('span', 'TextInput-icon');
+  icon.setAttribute('data-component', 'TextInput.LeadingVisual');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.appendChild(octicon('search'));
+  const filter = el('input', PRC.input);
   filter.type = 'text';
   filter.placeholder = 'Find a branch...';
+  filter.setAttribute('data-component', 'input');
   filter.setAttribute('aria-label', 'Filter branches');
   filter.value = panelFilter;
-  filterBox.appendChild(filter);
+  wrap.append(icon, filter);
+  filterBox.appendChild(wrap);
   panel.appendChild(filterBox);
 
-  const list = el('ul', 'ggt-list');
+  const list = el('ul', PRC.list);
+  list.setAttribute('data-component', 'ActionList');
+  list.setAttribute('data-variant', 'inset');
   list.setAttribute('role', 'listbox');
   list.setAttribute('aria-multiselectable', 'true');
   list.setAttribute('aria-label', 'Branches');
@@ -210,21 +330,37 @@ function buildBranchPicker(model) {
     // The re-render replaces this control; nothing to restore here.
   }
 
-  // One row, shaped like Primer's ActionList item: selection slot, leading
-  // visual, label, optional trailing state.
-  function addRow({ label, on, icon, tag, tagClass, tagTitle, disabled, onPick }) {
-    const item = el('li', 'ggt-item' + (on ? ' ggt-item-on' : ''));
+  // One ActionList.Item: spacer, selection slot with the check, leading
+  // visual, label, optional trailing Label pill.
+  function addRow({ label, on, tag, tagClass, tagTitle, disabled, onPick }) {
+    const item = el('li', PRC.item);
+    item.setAttribute('data-component', 'ActionList.Item');
     item.setAttribute('role', 'option');
     item.setAttribute('aria-selected', String(on));
     item.tabIndex = -1;
-    const check = el('span', 'ggt-check');
-    check.appendChild(octicon('check'));
-    item.append(check, octicon(icon, 'ggt-item-icon'), el('span', 'ggt-item-name', label));
+    const body = el('div', PRC.content);
+    body.setAttribute('data-size', 'medium');
+    const selection = el('span', PRC.selection);
+    selection.setAttribute('data-component', 'ActionList.Selection');
+    selection.appendChild(octicon('check', PRC.checkmark));
+    const visual = el('span', PRC.leading);
+    visual.setAttribute('data-component', 'ActionList.LeadingVisual');
+    visual.appendChild(octicon('git-branch'));
+    const sub = el('span', PRC.sub);
+    sub.setAttribute('data-component', 'ActionList.Item--DividerContainer');
+    const name = el('span', PRC.label, label);
+    name.setAttribute('data-component', 'ActionList.Item.Label');
+    sub.appendChild(name);
+    body.append(el('span', PRC.spacer), selection, visual, sub);
     if (tag) {
-      const pill = el('span', 'ggt-item-tag' + (tagClass ? ' ' + tagClass : ''), tag);
+      const pill = el('span', `${PRC.pill} ggt-pill${tagClass ? ' ' + tagClass : ''}`, tag);
+      pill.setAttribute('data-component', 'Label');
+      pill.setAttribute('data-size', 'small');
+      pill.setAttribute('data-variant', tagClass ? 'attention' : 'default');
       if (tagTitle) pill.title = tagTitle;
-      item.appendChild(pill);
+      body.appendChild(pill);
     }
+    item.appendChild(body);
     if (disabled) item.setAttribute('aria-disabled', 'true');
     else {
       item.addEventListener('click', () => onPick(item));
@@ -239,25 +375,24 @@ function buildBranchPicker(model) {
     return item;
   }
 
-  // Bulk actions first, as two ordinary rows — that is what replaces the old
-  // footer buttons.
+  // Bulk actions first, as two ordinary rows — what replaces footer buttons.
   const names = branches.map((branch) => branch.name);
   const pickable = branches.filter((branch) => branch.loaded || canFetch).map((b) => b.name);
   addRow({
     label: 'All branches',
     on: selected.size === branches.length,
-    icon: 'git-branch',
     onPick: (row) => apply(pickable, row),
   });
   if (defaultBranch && names.includes(defaultBranch)) {
     addRow({
       label: `Only ${defaultBranch}`,
       on: selected.size === 1 && selected.has(defaultBranch),
-      icon: 'git-branch',
       onPick: (row) => apply([defaultBranch], row),
     });
   }
-  list.appendChild(el('li', 'ggt-divider'));
+  const separator = el('li');
+  separator.setAttribute('role', 'separator');
+  list.appendChild(separator);
 
   const rows = [];
   const ordered = [...branches].sort((a, b) => {
@@ -274,9 +409,8 @@ function buildBranchPicker(model) {
     const item = addRow({
       label: branch.name,
       on,
-      icon: 'git-branch',
       tag: branch.name === defaultBranch ? 'default' : branch.loaded ? '' : canFetch ? 'fetch' : 'unavailable',
-      tagClass: branch.name === defaultBranch ? '' : 'ggt-item-fetch',
+      tagClass: branch.name === defaultBranch ? '' : 'ggt-pill-fetch',
       tagTitle: branch.loaded
         ? ''
         : canFetch
@@ -314,12 +448,8 @@ function buildBranchPicker(model) {
   filter.addEventListener('input', runFilter);
 
   // Anchored to the button, clamped to the viewport, kept in place while the
-  // page scrolls under it. The positioning itself is set inline rather than
-  // left to the stylesheet: the manifest-injected CSS only refreshes when the
-  // extension is reloaded, while the modules are re-read on every page load,
-  // so after an update the JS can run against last version's CSS. A fixed
-  // element with no rules at all would then sit at its static position — the
-  // end of <body>, bottom-left of the page — which is exactly what happened.
+  // page scrolls under it. Set inline as well as in the injected stylesheet:
+  // nothing about where the menu lands may depend on any stylesheet's timing.
   function place() {
     const box = button.getBoundingClientRect();
     const left = Math.max(8, Math.min(box.right - PANEL_WIDTH, innerWidth - PANEL_WIDTH - 8));
@@ -336,8 +466,8 @@ function buildBranchPicker(model) {
   const onDocClick = (event) => {
     if (!panel.contains(event.target) && !button.contains(event.target)) close();
   };
-  // Escape has to be watched on the document, not on the panel: picking a
-  // row applies straight away and focus is usually back on the page by then.
+  // Escape is watched on the document, not on the panel: picking a row
+  // applies straight away and focus is usually back on the page by then.
   const onKey = (event) => {
     if (event.key === 'Escape') {
       close();
@@ -362,6 +492,10 @@ function buildBranchPicker(model) {
     panelOpen = true;
     button.setAttribute('aria-expanded', 'true');
     place();
+    // When a pick re-renders the view, this runs before the new toolbar is
+    // in the document and the button's rect is all zeros; measure again once
+    // it has been attached, or the menu lands in the top-left corner.
+    requestAnimationFrame(place);
     document.addEventListener('click', onDocClick, true);
     document.addEventListener('keydown', onKey, true);
     addEventListener('scroll', place, true);
@@ -374,7 +508,7 @@ function buildBranchPicker(model) {
   panel.addEventListener('keydown', (event) => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
     event.preventDefault();
-    const visible = [...list.querySelectorAll('.ggt-item')].filter((item) => !item.hidden);
+    const visible = [...list.querySelectorAll('li[role="option"]')].filter((item) => !item.hidden);
     if (visible.length === 0) return;
     const at = visible.indexOf(document.activeElement);
     const step = event.key === 'ArrowDown' ? 1 : -1;

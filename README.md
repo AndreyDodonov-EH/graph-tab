@@ -56,16 +56,19 @@ Works on Chrome and Edge, Firefox is WiP.
   everything away and answer with an empty pack). A branch that reaches back
   further than the fetch is drawn as a stub with a dashed tail rather than
   hidden, the way `git log --graph --all` shows a shallow or unrelated
-  history. Choices are remembered per repository. The picker is GitHub's own
-  repository dropdown rebuilt (Primer's FilteredActionList): a 32px anchor
-  button with a git-branch Octicon and a `selected/total` counter, a 320px
-  overlay with a filter box, and `role="option"` rows carrying a checkbox and
-  a leading visual. It copies the proportions and the CSS variables, not
-  GitHub's class names (those churn). The overlay is fixed-positioned on
-  `document.body`: inside the graph shell it would be part of the toolbar's
-  layout and clipped by the shell's `overflow`. A pick applies immediately —
-  no Apply, no close button; the two rows at the top ("All branches",
-  "Only <default>") are the bulk actions.
+  history. Choices are remembered per repository. The picker *is* GitHub's
+  own repository dropdown: the markup carries the Primer React class names
+  (`prc-Overlay`, the TextInput wrapper, `prc-ActionList` with its selection
+  slot, `prc-Label`), so GitHub's stylesheet — loaded on every repo page —
+  styles it and it tracks GitHub's look. Those hashed names churn with Primer
+  releases, and the manifest-injected `style.css` only refreshes when the
+  extension is reloaded while the modules refresh on every page load, so the
+  geometry the menu cannot do without (position, list reset, row layout, the
+  check) is a small stylesheet injected from `render.js` itself. The overlay
+  is fixed-positioned on `document.body`: inside the graph shell it would be
+  part of the toolbar's layout and clipped by the shell's `overflow`. A pick
+  applies immediately — no Apply, no close button; the two rows at the top
+  ("All branches", "Only <default>") are the bulk actions.
 - **Ordering** (`src/order.js`): the network array's absolute position is a
   date axis, so commits spliced in from git or the commit pages are placed on
   it by their own date (`chronoIndex`) rather than stacked on top. Dates alone
