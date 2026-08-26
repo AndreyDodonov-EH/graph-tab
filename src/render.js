@@ -188,20 +188,32 @@ const UI_CSS = `
 .ggt-sp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 0 16px; }
 .ggt-sp-title { margin: 0; font-size: 14px; line-height: 21px; font-weight: 600; }
 
-/* Primer SegmentedControl, small: a track holding two knobs, the active one
-   raised. Hairlines separate inactive neighbours, as Primer's does. */
-.ggt-seg { display: inline-flex; margin: 0; padding: 0; list-style: none;
-  background: var(--controlTrack-bgColor-rest, #e6eaef); border-radius: 6px; }
-.ggt-seg-item { position: relative; display: inline-flex; border: 1px solid transparent; border-radius: 6px; }
-.ggt-seg-item + .ggt-seg-item::before { content: ""; position: absolute; left: -1px; top: 6px; bottom: 6px;
-  border-left: 1px solid var(--borderColor-default, #d1d9e0); }
-.ggt-seg-item[aria-current="true"] { background: var(--controlKnob-bgColor-rest, #fff);
-  border-color: var(--controlKnob-borderColor-rest, #d1d9e0); box-shadow: var(--shadow-resting-small, 0 1px 1px 0 rgba(31,35,40,.04)); }
-.ggt-seg-item[aria-current="true"]::before, .ggt-seg-item[aria-current="true"] + .ggt-seg-item::before { border-left-color: transparent; }
-.ggt-seg-btn { height: 26px; padding: 0 12px; font: inherit; font-size: 12px; line-height: 26px;
-  color: var(--fgColor-default, #1f2328); background: none; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
-.ggt-seg-item[aria-current="true"] .ggt-seg-btn { font-weight: 600; }
-.ggt-seg-item:not([aria-current="true"]) .ggt-seg-btn:hover { color: var(--fgColor-default, #1f2328); background: var(--control-transparent-bgColor-hover, rgba(129,139,152,.15)); }
+/* Primer SegmentedControl, size=small, copied from the one GitHub renders
+   for Preview | Code | Blame on a blob page and measured there: a 28px track
+   (bg --controlTrack-bgColor-rest, 1px border, 6px radius) whose items carry
+   a 1x12px divider on their right edge, and whose knob is the Content span —
+   selected it is white with a 1px border, 6px radius and 0 12px padding;
+   unselected it is transparent, 4px radius and 0 8px padding inside a button
+   with 4px of its own. Text is 14px/21px 400 in both states. */
+.ggt-seg { display: inline-flex; margin: 0; padding: 0; list-style: none; height: 28px; box-sizing: border-box;
+  background: var(--controlTrack-bgColor-rest, #e6eaef); border: 1px solid var(--controlTrack-borderColor-rest, #d1d9e0); border-radius: 6px; }
+.ggt-seg-item { position: relative; display: inline-flex; margin: -1px 1px -1px 0; list-style: none; }
+.ggt-seg-item:first-child { margin-left: -1px; }
+/* The hairline between neighbours, hidden on either side of the knob. */
+.ggt-seg-item::after { content: ""; position: absolute; top: 8px; bottom: 8px; right: -2px; width: 1px;
+  background: var(--borderColor-default, #d1d9e0); }
+.ggt-seg-item:last-child::after,
+.ggt-seg-item[data-selected]::after,
+.ggt-seg-item[data-selected] + .ggt-seg-item::after { background: transparent; }
+.ggt-seg-btn { display: inline-block; height: 28px; padding: 4px; font: inherit; color: var(--fgColor-default, #1f2328);
+  background: none; border: 0; border-radius: 6px; cursor: pointer; }
+.ggt-seg-item[data-selected] .ggt-seg-btn { padding: 0; }
+.ggt-seg-content { display: flex; align-items: center; justify-content: center; height: 100%; padding: 0 8px;
+  border: 1px solid transparent; border-radius: 4px; box-sizing: border-box; }
+.ggt-seg-item[data-selected] .ggt-seg-content { padding: 0 12px; background: var(--controlKnob-bgColor-rest, #fff);
+  border-color: var(--controlKnob-borderColor-rest, #d1d9e0); border-radius: 6px; }
+.ggt-seg-text { font-size: 14px; line-height: 21px; font-weight: 400; white-space: nowrap; }
+.ggt-seg-item:not([data-selected]) .ggt-seg-btn:hover .ggt-seg-content { background: var(--control-transparent-bgColor-hover, rgba(129,139,152,.15)); }
 .ggt-seg-btn:focus-visible { outline: 2px solid var(--focus-outlineColor, #0969da); outline-offset: -2px; }
 
 .ggt-input { display: flex; align-items: center; height: 32px; margin: 8px; padding: 0 0 0 8px;
@@ -217,7 +229,15 @@ const UI_CSS = `
 .ggt-list { margin: 0; padding: 8px 0; list-style: none; }
 .ggt-item { position: relative; margin: 0 8px; border-radius: 6px; list-style: none; cursor: pointer; }
 .ggt-item-content { display: flex; align-items: center; min-height: 32px; padding: 6px 8px; border-radius: 6px; box-sizing: border-box; }
-.ggt-item:hover, .ggt-item:focus-visible { background: var(--control-transparent-bgColor-hover, rgba(129,139,152,.15)); outline: none; }
+/* GitHub highlights the active row with the -active token (#818b9826), not
+   the -hover one (#818b981a) — measured on its own panel. */
+.ggt-item:hover, .ggt-item:focus { background: var(--control-transparent-bgColor-active, rgba(129,139,152,.15)); outline: none; }
+/* GitHub's active-descendant marker: a 4px accent bar pinned to the panel's
+   own left edge (the row is inset by 8px, so the bar sits at -8px), 4px in
+   from the row's top and bottom. It marks the row under the pointer or the
+   keyboard, not the selected ones — those are the check. */
+.ggt-item:hover::after, .ggt-item:focus::after { content: ""; position: absolute; left: -8px; top: 4px; bottom: 4px;
+  width: 4px; background: var(--fgColor-accent, #0969da); border-radius: 6px; }
 .ggt-item[aria-disabled="true"] { cursor: default; opacity: .55; }
 .ggt-sel, .ggt-vis { display: flex; flex: none; align-items: center; width: 16px; height: 20px; margin-right: 8px; }
 .ggt-vis { color: var(--fgColor-muted, #59636e); }
@@ -228,8 +248,6 @@ const UI_CSS = `
    where the label starts. */
 .ggt-item + .ggt-item .ggt-sub::before { content: ""; position: absolute; left: 48px; right: 8px; top: -1px;
   border-top: 1px solid var(--borderColor-muted, #d1d9e0); }
-.ggt-item[aria-selected="true"] .ggt-item-content::after { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px;
-  width: 3px; background: var(--fgColor-accent, #0969da); border-radius: 3px; }
 .ggt-pill { flex: none; padding: 0 7px; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--fgColor-muted, #59636e);
   border: 1px solid var(--borderColor-default, #d1d9e0); border-radius: 2em; }
 .ggt-pill-fetch { color: var(--fgColor-attention, #9a6700); border-color: var(--borderColor-attention-muted, rgba(212,167,44,.4)); }
@@ -419,14 +437,24 @@ function buildBranchPicker(model) {
     const isDefaultOnly = selected.size === 1 && selected.has(defaultBranch);
     const isAll = pickable.length > 0 && pickable.every((name) => selected.has(name));
     const seg = el('ul', 'ggt-seg');
-    seg.setAttribute('role', 'group');
+    seg.setAttribute('data-component', 'SegmentedControl');
+    seg.setAttribute('data-size', 'small');
     seg.setAttribute('aria-label', 'Branch scope');
     const segment = (label, active, names_, title_) => {
       const item = el('li', 'ggt-seg-item');
-      item.setAttribute('aria-current', String(active));
-      const btn = el('button', 'ggt-seg-btn', label);
+      item.setAttribute('data-component', 'SegmentedControl.Button');
+      if (active) item.setAttribute('data-selected', '');
+      const btn = el('button', 'ggt-seg-btn');
       btn.type = 'button';
       btn.title = title_;
+      btn.setAttribute('aria-pressed', String(active));
+      const content = el('span', 'ggt-seg-content');
+      // data-text reserves the width the label would take, so switching
+      // segments cannot shift the control — Primer's own trick.
+      const text = el('div', 'ggt-seg-text', label);
+      text.setAttribute('data-text', label);
+      content.appendChild(text);
+      btn.appendChild(content);
       // Re-applying the setting already in force would only cost a fetch.
       if (!active) btn.addEventListener('click', () => apply(names_, null));
       item.appendChild(btn);

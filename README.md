@@ -72,7 +72,8 @@ Works on Chrome and Edge, Firefox is WiP.
   `document.body`: inside the graph shell it would be part of the toolbar's
   layout and clipped by the shell's `overflow`. A pick applies immediately —
   no Apply, no close button. The two bulk settings live in the header as a
-  Primer SegmentedControl ("Default | All") rather than as rows: they act on
+  Primer SegmentedControl ("Default | All", copied from the Preview/Code/Blame
+  control on a blob page and measured there) rather than as rows: they act on
   the whole list, and GitHub likewise puts the one switch its branch panel
   has above the list, never inside it. Two named segments also avoid the lie
   a select-all checkbox would tell — a graph has to draw at least one branch,
