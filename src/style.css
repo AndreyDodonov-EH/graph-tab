@@ -456,3 +456,95 @@ a.ggt-author:hover {
 .ggt-welcome-btn:hover {
   background: var(--button-primary-bgColor-hover, #1c8139);
 }
+
+/* Branch picker: a small popup of checkboxes anchored under its toolbar
+   button, styled like GitHub's own overlays (Primer's SelectPanel). */
+.ggt-picker {
+  position: relative;
+}
+.ggt-picker-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ggt-caret {
+  width: 0;
+  height: 0;
+  border: 4px solid transparent;
+  border-top-color: currentColor;
+  border-bottom-width: 0;
+  opacity: 0.7;
+}
+.ggt-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  width: 300px;
+  background: var(--overlay-bgColor, var(--bgColor-default, #ffffff));
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 6px;
+  box-shadow: var(--shadow-floating-small, 0 6px 12px -3px rgba(31, 35, 40, 0.12));
+}
+.ggt-menu-list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.ggt-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ggt-menu-row:hover {
+  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+}
+.ggt-menu-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ggt-menu-tag {
+  flex: none;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--fgColor-muted, #59636e);
+  border: 1px solid var(--borderColor-muted, #d1d9e0);
+  border-radius: 999px;
+}
+.ggt-menu-fetch {
+  color: var(--fgColor-attention, #9a6700);
+  border-color: var(--borderColor-attention-muted, #d4a72c66);
+}
+.ggt-menu-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-top: 1px solid var(--borderColor-muted, #d1d9e0);
+}
+.ggt-menu-apply {
+  margin-left: auto;
+}
+.ggt-link {
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--fgColor-accent, #0969da);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.ggt-link:hover {
+  text-decoration: underline;
+}
+.ggt-link:focus-visible,
+.ggt-menu-row input:focus-visible {
+  outline: 2px solid var(--focus-outlineColor, #0969da);
+  outline-offset: 2px;
+}

@@ -74,6 +74,7 @@ test('private repo with the opt-in freshens via web pages, never git', async () 
         commits: [{ id: OID, parents: [], author: 'X', login: 'x', date: '2026-01-01 00:00:00', message: 'old' }],
       });
     }
+    if (path.includes('/refs?type=branch')) return jsonResponse({ refs: ['main'] });
     if (path.includes('/refs?type=tag')) return jsonResponse({ refs: ['v1'] });
     if (path.includes('/latest-commit/main')) return jsonResponse({ oid: FRESH_OID });
     if (path.includes('/latest-commit/v1')) return jsonResponse({ oid: OID });
@@ -370,5 +371,155 @@ test('404 fails immediately without retries', async () => {
     assert.equal(calls.length, 1);
   } finally {
     globalThis.fetch = realFetch;
+  }
+});
+
+// --- branch selection ------------------------------------------------------
+// A branch whose tip is outside the loaded network window is no root, so
+// nothing of it used to be drawn — the bug this feature exists for. The tip
+// is materialised on demand, when the branch is selected.
+
+const FEAT_TIP = 'c'.repeat(40);
+
+function branchPickerFetch({ packObjects, featOid = FEAT_TIP, onFetchBody = () => {} }) {
+  return async (url, init = {}) => {
+    const path = String(url);
+    if (path.includes('/network/meta')) {
+      return jsonResponse({
+        nethash: 'h',
+        dates: ['2026-07-01'],
+        users: [{
+          name: 'o',
+          repo: 'r',
+          heads: [{ name: 'main', id: OID }, { name: 'feature', id: featOid }],
+        }],
+      });
+    }
+    if (path.includes('/network/chunk')) {
+      // The window holds main's tip only; feature's tip is older than the
+      // newest 100 entries of the network array and never lands in it.
+      return jsonResponse({
+        commits: [{ id: OID, parents: [], author: 'A D', login: 'ad', date: '2026-07-01 00:00:00', message: 'base' }],
+      });
+    }
+    if (path.includes('.git/git-upload-pack')) {
+      if (String(init.body).includes('command=ls-refs')) {
+        return new Response(
+          pkt(`${OID} HEAD symref-target:refs/heads/main\n`).toString() +
+            pkt(`${OID} refs/heads/main\n`).toString() +
+            pkt(`${featOid} refs/heads/feature\n`).toString() +
+            '0000',
+        );
+      }
+      onFetchBody(String(init.body));
+      return new Response(Buffer.concat([
+        pkt('packfile\n'),
+        pkt(Buffer.concat([Buffer.from([1]), packOf(packObjects)])),
+        Buffer.from('0000'),
+      ]));
+    }
+    throw new Error('unexpected url: ' + path);
+  };
+}
+
+const publicDocument = {
+  querySelector: (selector) =>
+    selector.includes('repository_public') ? { content: 'true' } : null,
+  querySelectorAll: () => [],
+};
+
+test('an unmerged branch outside the window is offered, drawn when selected', async () => {
+  const mid = commitBytes({ parents: [OID], message: 'feature work\n' });
+  const tip = commitBytes({ parents: [oidOf(mid)], message: 'feature tip\n' });
+  const realFetch = globalThis.fetch;
+  const bodies = [];
+  globalThis.document = publicDocument;
+  globalThis.fetch = branchPickerFetch({
+    packObjects: [mid, tip],
+    featOid: oidOf(tip),
+    onFetchBody: (body) => bodies.push(body),
+  });
+  try {
+    const source = await openRepoGraph('o', 'r');
+
+    // Default: only what the window already holds, so no extra request.
+    assert.equal(source.defaultBranch, 'main');
+    assert.deepEqual([...source.selected], ['main']);
+    assert.deepEqual(source.branches, [
+      { name: 'main', oid: OID, loaded: true },
+      { name: 'feature', oid: oidOf(tip), loaded: false },
+    ]);
+    assert.equal(bodies.length, 0);
+    assert.deepEqual(source.view().commits.map((c) => c.oid), [OID]);
+
+    await source.selectBranches(['main', 'feature']);
+    assert.equal(bodies.length, 1);
+    // "have" would promise the server ancestors we do not hold; the window is
+    // a slice of the network array, not an ancestor-closed set.
+    assert.ok(!bodies[0].includes('have '), 'the fetch must not negotiate haves');
+    assert.ok(bodies[0].includes(`want ${oidOf(tip)}`));
+
+    assert.deepEqual(source.heads, [
+      { name: 'main', oid: OID },
+      { name: 'feature', oid: oidOf(tip) },
+    ]);
+    assert.deepEqual(source.truncated, []);
+    // Newest first, and the branch is spliced in above the base it forked from.
+    assert.deepEqual(source.view().commits.map((c) => c.oid), [oidOf(tip), oidOf(mid), OID]);
+    assert.equal(source.fresh, true);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete globalThis.document;
+  }
+});
+
+test('a branch that reaches deeper than the fetch is drawn as a stub, not dropped', async () => {
+  // The pack carries the tip but not its parent: the branch forked further
+  // back than the fetch bound. It still gets a row, a chip and a dashed tail.
+  const tip = commitBytes({ parents: ['9'.repeat(40)], message: 'old branch tip\n' });
+  const realFetch = globalThis.fetch;
+  globalThis.document = publicDocument;
+  globalThis.fetch = branchPickerFetch({ packObjects: [tip], featOid: oidOf(tip) });
+  try {
+    const source = await openRepoGraph('o', 'r');
+    await source.selectBranches(['main', 'feature']);
+    assert.deepEqual(source.truncated, ['feature']);
+    assert.deepEqual(source.view().commits.map((c) => c.oid), [oidOf(tip), OID]);
+    assert.deepEqual(source.heads.map((h) => h.name), ['main', 'feature']);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete globalThis.document;
+  }
+});
+
+test('deselecting a branch removes its commits from the graph', async () => {
+  const side = commitBytes({ parents: [OID], message: 'side\n' });
+  const realFetch = globalThis.fetch;
+  globalThis.document = publicDocument;
+  const store = {};
+  globalThis.localStorage = {
+    getItem: (key) => (key in store ? store[key] : null),
+    setItem: (key, value) => {
+      store[key] = String(value);
+    },
+    removeItem: (key) => {
+      delete store[key];
+    },
+  };
+  globalThis.fetch = branchPickerFetch({ packObjects: [side], featOid: oidOf(side) });
+  try {
+    const source = await openRepoGraph('o', 'r');
+    await source.selectBranches(['main', 'feature']);
+    assert.equal(source.view().commits.length, 2);
+
+    await source.selectBranches(['main']);
+    assert.deepEqual(source.view().commits.map((c) => c.oid), [OID]);
+    assert.deepEqual(source.heads, [{ name: 'main', oid: OID }]);
+    // and the choice is remembered for the next visit
+    assert.deepEqual(JSON.parse(store['ggt-branches'])['o/r'], ['main']);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete globalThis.document;
+    delete globalThis.localStorage;
   }
 });

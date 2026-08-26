@@ -115,6 +115,11 @@ function rerender(view) {
     commits,
     graph: layout(commits),
     heads: source.heads,
+    branches: source.branches,
+    selected: source.selected,
+    defaultBranch: source.defaultBranch,
+    truncated: source.truncated,
+    canFetch: source.canFetch,
     tags: source.tags,
     fresh: source.fresh,
     private: source.private,
@@ -133,6 +138,12 @@ function rerender(view) {
     onToggleFresh: (on) => {
       setPrivateFreshEnabled(on);
       reload();
+    },
+    // Adding branches only ever adds commits, so the loaded window survives:
+    // no meta/chunk refetch, just the pull for the newly ticked branches.
+    onSelectBranches: async (names) => {
+      await source.selectBranches(names);
+      rerender(view);
     },
   });
 }

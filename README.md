@@ -44,6 +44,26 @@ Works on Chrome and Edge, Firefox is WiP.
   why it is off by default.
   Fetched commits are immutable, so they are cached (localStorage, keyed by
   oid) and never re-fetched.
+- **Branches** (`src/branches.js`, the header picker): which branches the
+  graph draws is a choice, because a branch outside the snapshot window costs
+  a request to pull in and not everyone wants every `dependabot/*` line. The
+  default is free: the default branch (`HEAD`'s symref target from ls-refs, or
+  the `defaultBranch` the repo page embeds) plus every branch the window
+  already holds — the old behaviour, at the old cost. Ticking more branches
+  fetches just their tips (`want` + a small `deepen`, deliberately **no**
+  `have` lines: the loaded window is a slice of the network array, not an
+  ancestor-closed set, so promising it as "have" makes the server negotiate
+  everything away and answer with an empty pack). A branch that reaches back
+  further than the fetch is drawn as a stub with a dashed tail rather than
+  hidden, the way `git log --graph --all` shows a shallow or unrelated
+  history. Choices are remembered per repository.
+- **Ordering** (`src/order.js`): the network array's absolute position is a
+  date axis, so commits spliced in from git or the commit pages are placed on
+  it by their own date (`chronoIndex`) rather than stacked on top. Dates alone
+  cannot guarantee a child stays above its parent, so the final row order is
+  decided topologically and uses the date only to choose between commits that
+  are ready — which is also what makes two histories with nothing in common
+  interleave sanely instead of fighting over the lanes.
 - **Layout** (`src/layout.js`): pure, DOM-free lane assignment following the
   classic `git log --graph` / vscode-git-graph model: lane reservation and
   release, merge edges that join already-open lanes, octopus merges, and

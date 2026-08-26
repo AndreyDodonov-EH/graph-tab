@@ -122,6 +122,106 @@ function buildShell(subtitle) {
   return { shell, toolbar };
 }
 
+// The branch picker: which branches the graph draws.
+//
+// Not every branch is worth a lane, and the ones outside GitHub's snapshot
+// window cost a request to pull in, so the set is the user's call rather than
+// something guessed for them — the same shape as the "fetch fresh commits"
+// opt-in next to it. Choices are applied on "Apply", not per click, so
+// ticking three boxes is one fetch and not three.
+function buildBranchPicker(model) {
+  const { branches, selected, defaultBranch, onSelectBranches, canFetch } = model;
+  const box = el('div', 'ggt-picker');
+
+  const button = el('button', 'ggt-btn ggt-picker-btn');
+  button.type = 'button';
+  button.setAttribute('aria-haspopup', 'true');
+  button.setAttribute('aria-expanded', 'false');
+  button.title = 'Choose which branches the graph draws';
+  button.append(`Branches ${selected.size}/${branches.length}`, el('span', 'ggt-caret'));
+
+  const menu = el('div', 'ggt-menu');
+  menu.hidden = true;
+
+  const list = el('div', 'ggt-menu-list');
+  const boxes = new Map();
+  // Default branch first, then the ones already drawn, then the rest — the
+  // order people look for them in.
+  const ordered = [...branches].sort((a, b) => {
+    const rank = (branch) =>
+      (branch.name === defaultBranch ? 0 : 2) - (selected.has(branch.name) ? 1 : 0);
+    return rank(a) - rank(b) || a.name.localeCompare(b.name);
+  });
+  for (const branch of ordered) {
+    const row = el('label', 'ggt-menu-row');
+    const input = el('input');
+    input.type = 'checkbox';
+    input.checked = selected.has(branch.name);
+    boxes.set(branch.name, input);
+    row.append(input, el('span', 'ggt-menu-name', branch.name));
+    if (branch.name === defaultBranch) row.appendChild(el('span', 'ggt-menu-tag', 'default'));
+    else if (!branch.loaded) {
+      // Nothing can pull this branch in without a live ref source: a private
+      // repository rejects anonymous git, so it needs the freshness opt-in.
+      input.disabled = !canFetch;
+      const hint = el('span', 'ggt-menu-tag ggt-menu-fetch', canFetch ? 'fetch' : 'unavailable');
+      hint.title = canFetch
+        ? 'Outside the loaded window — ticking this pulls the branch in.'
+        : 'Outside the loaded window. Tick "fetch fresh commits" to make it available.';
+      row.appendChild(hint);
+    }
+    list.appendChild(row);
+  }
+  menu.appendChild(list);
+
+  const foot = el('div', 'ggt-menu-foot');
+  const setAll = (on) => {
+    for (const [name, input] of boxes) {
+      if (!input.disabled) input.checked = on || name === defaultBranch;
+    }
+  };
+  const all = el('button', 'ggt-link', 'All');
+  all.type = 'button';
+  all.addEventListener('click', () => setAll(true));
+  const none = el('button', 'ggt-link', defaultBranch ? `Only ${defaultBranch}` : 'None');
+  none.type = 'button';
+  none.addEventListener('click', () => setAll(false));
+  const apply = el('button', 'ggt-btn ggt-menu-apply', 'Apply');
+  apply.type = 'button';
+  apply.addEventListener('click', async () => {
+    const names = [...boxes].filter(([, input]) => input.checked).map(([name]) => name);
+    apply.disabled = true;
+    apply.textContent = 'Loading…';
+    await onSelectBranches(names);
+  });
+  foot.append(all, none, apply);
+  menu.appendChild(foot);
+
+  const close = () => {
+    menu.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', onDocClick, true);
+  };
+  const onDocClick = (event) => {
+    if (!box.contains(event.target)) close();
+  };
+  button.addEventListener('click', () => {
+    if (menu.hidden) {
+      menu.hidden = false;
+      button.setAttribute('aria-expanded', 'true');
+      document.addEventListener('click', onDocClick, true);
+    } else {
+      close();
+    }
+  });
+  menu.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') close();
+  });
+
+  box.append(button, menu);
+  return box;
+}
+
 function avatarFallback(commit) {
   const initial = (commit.login || commit.author || '?').charAt(0).toUpperCase();
   const span = el('span', 'ggt-avatar ggt-avatar-fallback', initial);
@@ -133,13 +233,14 @@ function avatarFallback(commit) {
  * Render the graph view into `container` (cleared first).
  * model: { owner, repo, commits, graph, heads, tags, fresh, filtered, total,
  *   loaded, olderCount, failedWindows, hasMore, onLoadOlder, onRefresh,
- *   private, privateFresh, onToggleFresh }
+ *   private, privateFresh, onToggleFresh,
+ *   branches, selected, defaultBranch, truncated, canFetch, onSelectBranches }
  */
 export function render(container, model) {
   const {
     owner, repo, commits, graph, heads, tags, fresh, filtered, hasMore,
     total, loaded, olderCount, failedWindows, onLoadOlder, onRefresh,
-    private: priv, privateFresh, onToggleFresh,
+    private: priv, privateFresh, onToggleFresh, branches, selected, truncated = [],
   } = model;
 
   const refsByOid = new Map();
@@ -158,11 +259,13 @@ export function render(container, model) {
   const grandTotal = Math.max(total, loaded);
   const { shell, toolbar } = buildShell(
     `${owner}/${repo} · ${loaded} of ${grandTotal} commits loaded · ` +
-      `${heads.length} ${heads.length === 1 ? 'branch' : 'branches'}` +
+      `${heads.length} of ${branches.length} ` +
+      `${branches.length === 1 ? 'branch' : 'branches'} shown` +
       (tags.length > 0 ? ` · ${tags.length} ${tags.length === 1 ? 'tag' : 'tags'}` : ''),
   );
 
   const actions = el('div', 'ggt-actions');
+  if (branches.length > 0) actions.appendChild(buildBranchPicker(model));
   if (priv) {
     const label = el('label', 'ggt-fresh');
     label.title =
@@ -196,6 +299,11 @@ export function render(container, model) {
   if (!filtered) {
     shell.appendChild(el('div', 'ggt-banner',
       'No branch head of this repository is inside the loaded window — showing the raw fork network.'));
+  }
+  if (truncated.length > 0) {
+    shell.appendChild(el('div', 'ggt-banner',
+      `Only the tip of ${truncated.join(', ')} could be loaded — ` +
+        'the dashed line marks where each branch continues below the graph.'));
   }
   if (failedWindows > 0) {
     shell.appendChild(el('div', 'ggt-banner ggt-banner-error',
