@@ -58,22 +58,24 @@ Works on Chrome and Edge, Firefox is WiP.
   hidden, the way `git log --graph --all` shows a shallow or unrelated
   history. Choices are remembered per repository. The picker is GitHub's
   SelectPanel — the control behind its repository and branch dropdowns —
-  rebuilt to its measured metrics: a 320px/12px-radius overlay, a header at
-  `8px 8px 0` with a 14px/21px 600 title, a 304x32 muted filter input at 8px
-  margin, and a list at `8px 0` whose 32px rows sit at `0 8px` with their
-  content at `6px 8px` behind a 16px selection slot and a 16px leading
-  visual. Those numbers are hard-coded rather than borrowed through Primer's
-  class names because GitHub code-splits its CSS: on a plain repository page
-  none of the `prc-ActionList-*` / `prc-SelectPanel-*` rules are loaded until
-  GitHub's own picker mounts, so borrowing them looked right only by luck.
-  The stylesheet is injected from `render.js`, not `style.css`, because the
-  manifest only refreshes that one when the extension is reloaded while the
-  modules refresh on every page load. The overlay is fixed-positioned on
+  with Primer's own rules: `prc-Overlay-Overlay`, `prc-SelectPanel-*`,
+  `prc-FilteredActionList-*`, `prc-ActionList-*`, `prc-SegmentedControl-*`
+  and the TextInput wrapper are lifted verbatim out of GitHub's stylesheet
+  (`primer-react-css.*.module.css`) with only their selectors renamed, so
+  every declaration, custom property and fallback is GitHub's — down to the
+  ActionList's grid areas, its `data-dividers` hairlines and the way they
+  hide around the active row, and the accent bar on
+  `[data-is-active-descendant]`. They are *shipped* rather than borrowed
+  because GitHub code-splits that stylesheet: on a plain repository page none
+  of it is loaded until one of GitHub's own menus mounts. It is injected from
+  `render.js`, not `style.css`, because the manifest only refreshes that one
+  when the extension is reloaded while the modules refresh on every page
+  load. Refresh the copy by re-running the extraction against the current
+  asset URL. The overlay is fixed-positioned on
   `document.body`: inside the graph shell it would be part of the toolbar's
   layout and clipped by the shell's `overflow`. A pick applies immediately —
   no Apply, no close button. The two bulk settings live in the header as a
-  Primer SegmentedControl ("Default | All", copied from the Preview/Code/Blame
-  control on a blob page and measured there) rather than as rows: they act on
+  Primer SegmentedControl ("Default | All") rather than as rows: they act on
   the whole list, and GitHub likewise puts the one switch its branch panel
   has above the list, never inside it. Two named segments also avoid the lie
   a select-all checkbox would tell — a graph has to draw at least one branch,

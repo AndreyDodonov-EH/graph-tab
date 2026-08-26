@@ -177,107 +177,167 @@ let livePanel = null;
 let detachPanel = null;
 
 const UI_STYLE_ID = 'ggt-ui-style';
+
+// Primer's own rules, lifted verbatim from GitHub's stylesheet
+// (github.githubassets.com/assets/primer-react-css.e93836c189a090d0.module.css)
+// with only the selectors renamed: prc-Overlay-Overlay -> .ggt-panel,
+// prc-SelectPanel-* -> .ggt-sp-*, prc-FilteredActionList-* -> .ggt-fal-*,
+// prc-ActionList-* -> .ggt-item/.ggt-sub/..., prc-SegmentedControl-* ->
+// .ggt-seg-*, prc-components-TextInput* -> .ggt-input. Declarations,
+// custom properties and fallbacks are untouched, so the control is GitHub's
+// rather than an imitation of it, and it follows both themes.
+//
+// They have to be shipped rather than borrowed: GitHub code-splits this
+// stylesheet, and on a plain repository page none of it is loaded until one
+// of GitHub's own menus mounts. Refresh by re-running the extraction against
+// the current asset URL.
 const UI_CSS = `
-.ggt-panel { position: fixed; z-index: 1000; display: flex; flex-direction: column; width: ${PANEL_WIDTH}px;
-  font-size: 14px; line-height: 21px; color: var(--fgColor-default, #1f2328);
-  background: var(--overlay-bgColor, var(--bgColor-default, #fff)); border-radius: 12px;
-  box-shadow: var(--borderColor-default, rgba(209,217,224,.25)) 0 0 0 1px, rgba(37,41,46,.04) 0 6px 12px -3px, rgba(37,41,46,.12) 0 6px 18px 0; }
+/* Overlay */
+.ggt-panel { background-color: var(--overlay-bgColor, #fff); border-radius: var(--borderRadius-large, .75rem);
+  box-shadow: var(--shadow-floating-small, 0 0 0 1px #d1d9e080, 0 6px 12px -3px #25292e0a, 0 6px 18px 0 #25292e1f);
+  min-width: 192px; max-width: calc(100vw - 2rem); height: auto; position: absolute; overflow: hidden; outline: 1px solid #0000; }
+.ggt-panel:focus { outline: none; }
 .ggt-panel[hidden] { display: none; }
 .ggt-panel[aria-busy="true"] { pointer-events: none; }
 
-.ggt-sp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 0 16px; }
-.ggt-sp-title { margin: 0; font-size: 14px; line-height: 21px; font-weight: 600; }
+/* SelectPanel */
+.ggt-sp { height: inherit; max-height: inherit; flex-direction: column; display: flex; }
+.ggt-sp-head { padding-left: var(--base-size-8, .5rem); padding-right: var(--base-size-8, .5rem);
+  padding-top: var(--base-size-8, .5rem); justify-content: space-between; align-items: flex-start; display: flex; }
+.ggt-sp-title { font-size: var(--text-body-size-medium, .875rem); margin: var(--base-size-8, .5rem) 0 0 var(--base-size-8, .5rem); }
 
-/* Primer SegmentedControl, size=small, copied from the one GitHub renders
-   for Preview | Code | Blame on a blob page and measured there: a 28px track
-   (bg --controlTrack-bgColor-rest, 1px border, 6px radius) whose items carry
-   a 1x12px divider on their right edge, and whose knob is the Content span —
-   selected it is white with a 1px border, 6px radius and 0 12px padding;
-   unselected it is transparent, 4px radius and 0 8px padding inside a button
-   with 4px of its own. Text is 14px/21px 400 in both states. */
-.ggt-seg { display: inline-flex; margin: 0; padding: 0; list-style: none; height: 28px; box-sizing: border-box;
-  background: var(--controlTrack-bgColor-rest, #e6eaef); border: 1px solid var(--controlTrack-borderColor-rest, #d1d9e0); border-radius: 6px; }
-.ggt-seg-item { position: relative; display: inline-flex; margin: -1px 1px -1px 0; list-style: none; }
-.ggt-seg-item:first-child { margin-left: -1px; }
-/* The hairline between neighbours, hidden on either side of the knob. */
-.ggt-seg-item::after { content: ""; position: absolute; top: 8px; bottom: 8px; right: -2px; width: 1px;
-  background: var(--borderColor-default, #d1d9e0); }
-.ggt-seg-item:last-child::after,
-.ggt-seg-item[data-selected]::after,
-.ggt-seg-item[data-selected] + .ggt-seg-item::after { background: transparent; }
-.ggt-seg-btn { display: inline-block; height: 28px; padding: 4px; font: inherit; color: var(--fgColor-default, #1f2328);
-  background: none; border: 0; border-radius: 6px; cursor: pointer; }
-.ggt-seg-item[data-selected] .ggt-seg-btn { padding: 0; }
-.ggt-seg-content { display: flex; align-items: center; justify-content: center; height: 100%; padding: 0 8px;
-  border: 1px solid transparent; border-radius: 4px; box-sizing: border-box; }
-.ggt-seg-item[data-selected] .ggt-seg-content { padding: 0 12px; background: var(--controlKnob-bgColor-rest, #fff);
-  border-color: var(--controlKnob-borderColor-rest, #d1d9e0); border-radius: 6px; }
-.ggt-seg-text { font-size: 14px; line-height: 21px; font-weight: 400; white-space: nowrap; }
-.ggt-seg-item:not([data-selected]) .ggt-seg-btn:hover .ggt-seg-content { background: var(--control-transparent-bgColor-hover, rgba(129,139,152,.15)); }
-.ggt-seg-btn:focus-visible { outline: 2px solid var(--focus-outlineColor, #0969da); outline-offset: -2px; }
+/* FilteredActionList */
+.ggt-fal { flex-direction: column; display: flex; overflow: hidden; height: inherit; max-height: inherit; }
+.ggt-fal-head { box-shadow: 0 1px 0 var(--borderColor-default, #d1d9e0); z-index: 1; }
+.ggt-fal-body { flex-grow: 1; height: 100%; display: flex; overflow: auto; }
 
-.ggt-input { display: flex; align-items: center; height: 32px; margin: 8px; padding: 0 0 0 8px;
-  background: var(--bgColor-muted, #f6f8fa); border: 1px solid var(--control-borderColor-rest, #d1d9e0);
-  border-radius: 6px; box-sizing: border-box; }
-.ggt-input:focus-within { border-color: var(--focus-outlineColor, #0969da); box-shadow: inset 0 0 0 1px var(--focus-outlineColor, #0969da); }
-.ggt-input svg { flex: none; margin-right: 8px; color: var(--fgColor-muted, #59636e); }
-.ggt-input input { flex: 1; min-width: 0; height: 30px; margin: 0 8px 0 0; padding: 1px 8px 1px 0;
-  font: inherit; font-size: 14px; line-height: 20px; color: inherit; background: none; border: 0; outline: none; }
-.ggt-input input::placeholder { color: var(--fgColor-muted, #59636e); }
+/* TextInput */
+.ggt-input { background-color: var(--bgColor-default, #fff);
+  border: var(--borderWidth-thin, .0625rem) solid var(--control-borderColor-rest, #d1d9e0);
+  border-radius: var(--borderRadius-medium, .375rem); box-shadow: var(--shadow-inset, inset 0 1px 0 0 #1f23280a);
+  color: var(--fgColor-default, #1f2328); cursor: text; font-size: var(--text-body-size-medium, .875rem);
+  line-height: var(--base-size-20, 1.25rem); min-height: var(--base-size-32, 2rem); vertical-align: middle;
+  outline: none; align-items: stretch; display: flex; overflow: hidden;
+  margin: var(--base-size-8, .5rem); align-self: stretch; }
+.ggt-input:where([data-contrast]) { background-color: var(--control-bgColor-contrast, var(--bgColor-inset, #f6f8fa)); }
+.ggt-input:focus-within { border-color: var(--borderColor-accent-emphasis, #0969da);
+  outline: var(--borderWidth-thick, .125rem) solid var(--borderColor-accent-emphasis, #0969da); outline-offset: -1px; }
+.ggt-input .ggt-input-icon { display: flex; align-items: center; padding-left: 8px; color: var(--fgColor-muted, #59636e); }
+.ggt-input input { appearance: none; color: inherit; font-family: inherit; font-size: inherit;
+  background-color: #0000; border: 0; width: 100%; padding: 0 8px; outline: none; }
 
-.ggt-list-box { flex: 1; min-height: 0; overflow-y: auto; }
-.ggt-list { margin: 0; padding: 8px 0; list-style: none; }
-.ggt-item { position: relative; margin: 0 8px; border-radius: 6px; list-style: none; cursor: pointer; }
-.ggt-item-content { display: flex; align-items: center; min-height: 32px; padding: 6px 8px; border-radius: 6px; box-sizing: border-box; }
-/* GitHub highlights the active row with the -active token (#818b9826), not
-   the -hover one (#818b981a) — measured on its own panel. */
-.ggt-item:hover, .ggt-item:focus { background: var(--control-transparent-bgColor-active, rgba(129,139,152,.15)); outline: none; }
-/* GitHub's active-descendant marker: a 4px accent bar pinned to the panel's
-   own left edge (the row is inset by 8px, so the bar sits at -8px), 4px in
-   from the row's top and bottom. It marks the row under the pointer or the
-   keyboard, not the selected ones — those are the check. */
-.ggt-item:hover::after, .ggt-item:focus::after { content: ""; position: absolute; left: -8px; top: 4px; bottom: 4px;
-  width: 4px; background: var(--fgColor-accent, #0969da); border-radius: 6px; }
-.ggt-item[aria-disabled="true"] { cursor: default; opacity: .55; }
-.ggt-sel, .ggt-vis { display: flex; flex: none; align-items: center; width: 16px; height: 20px; margin-right: 8px; }
-.ggt-vis { color: var(--fgColor-muted, #59636e); }
+/* ActionList */
+.ggt-list { margin: 0; padding: 0; list-style: none; flex-grow: 1; }
+.ggt-list:where([data-variant=inset]) { padding-block: var(--base-size-8, .5rem); }
+.ggt-list:where([data-variant=inset]) .ggt-item { margin-inline: var(--base-size-8, .5rem); }
+.ggt-list:where([data-dividers=true]) .ggt-sub:before { background: var(--borderColor-muted, #d1d9e0b3); content: "";
+  width: 100%; height: 1px; display: block; position: absolute; top: -7px; }
+.ggt-list:where([data-dividers=true]) .ggt-item:first-of-type .ggt-sub:before { visibility: hidden; }
+.ggt-item { background-color: var(--control-transparent-bgColor-rest, #fff0);
+  border-radius: var(--borderRadius-medium, .375rem); list-style: none; position: relative; }
+.ggt-item:not([aria-disabled=true]):hover { cursor: pointer; background-color: var(--control-transparent-bgColor-hover, #818b981a); }
+.ggt-item:focus-visible { box-shadow: none; outline: 2px solid var(--focus-outlineColor, #0969da); outline-offset: 0; }
+.ggt-item:not([aria-disabled=true]):hover .ggt-sub:before,
+.ggt-item:not([aria-disabled=true]):hover + .ggt-item .ggt-sub:before,
+.ggt-item:focus-visible .ggt-sub:before,
+.ggt-item:focus-visible + .ggt-item .ggt-sub:before,
+.ggt-item:where([data-is-active-descendant]) .ggt-sub:before,
+.ggt-item:where([data-is-active-descendant]) + .ggt-item .ggt-sub:before { visibility: hidden; }
+.ggt-item:where([data-is-active-descendant]) { background: var(--control-transparent-bgColor-selected, #818b9826); outline: 2px solid #0000; }
+.ggt-item:where([data-is-active-descendant]):after { background: var(--borderColor-accent-emphasis, #0969da);
+  border-radius: var(--borderRadius-medium, .375rem); content: ""; height: calc(100% - var(--base-size-8, .5rem));
+  left: calc(var(--base-size-8, .5rem)*-1); top: var(--base-size-4, .25rem); width: var(--base-size-4, .25rem); position: absolute; }
+.ggt-item[aria-disabled=true] .ggt-item-content * { color: var(--control-fgColor-disabled, #818b98); }
+.ggt-item[aria-disabled=true]:hover, .ggt-item[aria-disabled=true] .ggt-item-content:hover { cursor: not-allowed; background-color: #0000; }
+.ggt-item-content { border-radius: var(--borderRadius-medium, .375rem); color: var(--control-fgColor-rest, #25292e);
+  padding-block: var(--control-medium-paddingBlock, .375rem); padding-inline: var(--control-medium-paddingInline-condensed, .5rem);
+  text-align: left; touch-action: manipulation; user-select: none; background-color: #0000; border: none;
+  grid-template: "leadingAction leadingVisual content" min-content / min-content min-content minmax(0, auto);
+  align-items: start; width: 100%; transition: background 33.333ms linear; display: grid; position: relative; }
+.ggt-item-content > :not(:last-child) { margin-right: var(--control-medium-gap, .5rem); }
+.ggt-item-content:hover { cursor: pointer; text-decoration: none; }
+.ggt-sel { grid-area: leadingAction; }
+.ggt-vis { grid-area: leadingVisual; }
+.ggt-sel, .ggt-vis { min-height: var(--base-size-20, 1.25rem); pointer-events: none; min-width: max-content;
+  color: var(--fgColor-muted, #59636e); fill: var(--fgColor-muted, #59636e); align-items: center; line-height: 20px; display: flex; }
 .ggt-item[aria-selected="false"] .ggt-sel svg { visibility: hidden; }
-.ggt-sub { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; line-height: 20px; }
-.ggt-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* GitHub's data-dividers: a hairline above every row but the first, inset to
-   where the label starts. */
-.ggt-item + .ggt-item .ggt-sub::before { content: ""; position: absolute; left: 48px; right: 8px; top: -1px;
-  border-top: 1px solid var(--borderColor-muted, #d1d9e0); }
-.ggt-pill { flex: none; padding: 0 7px; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--fgColor-muted, #59636e);
-  border: 1px solid var(--borderColor-default, #d1d9e0); border-radius: 2em; }
-.ggt-pill-fetch { color: var(--fgColor-attention, #9a6700); border-color: var(--borderColor-attention-muted, rgba(212,167,44,.4)); }
+.ggt-sub { grid-template: "label trailingVisual" min-content / minmax(0, auto) min-content; grid-area: content;
+  align-items: center; width: 100%; display: grid; position: relative; }
+.ggt-sub > :not(:last-child) { margin-right: var(--control-medium-gap, .5rem); }
+.ggt-label { color: var(--fgColor-default, #1f2328); font-size: var(--text-body-size-medium, .875rem);
+  font-weight: var(--base-text-weight-normal, 400); grid-area: label; line-height: 20px; position: relative;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ggt-pill { grid-area: trailingVisual; padding: 0 7px; font-size: var(--text-body-size-small, .75rem);
+  font-weight: var(--base-text-weight-medium, 500); line-height: 18px; color: var(--fgColor-muted, #59636e);
+  border: var(--borderWidth-thin, .0625rem) solid var(--borderColor-default, #d1d9e0); border-radius: 2em; white-space: nowrap; }
+.ggt-pill-fetch { color: var(--fgColor-attention, #9a6700); border-color: var(--borderColor-attention-muted, #d4a72c66); }
 .ggt-list-empty { padding: 6px 16px 10px; color: var(--fgColor-muted, #59636e); list-style: none; }
 
-.ggt-select-btn { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font: inherit; font-size: 14px;
-  font-weight: 500; color: var(--button-default-fgColor-rest, #25292e); background: var(--button-default-bgColor-rest, #f6f8fa);
-  border: 1px solid var(--button-default-borderColor-rest, #d1d9e0); border-radius: 6px; white-space: nowrap; cursor: pointer; }
+/* SegmentedControl */
+.ggt-seg { --segmented-control-icon-width: 32px; background-color: var(--controlTrack-bgColor-rest, #e6eaef);
+  border: var(--borderWidth-thin, .0625rem) solid var(--controlTrack-borderColor-rest, transparent);
+  border-radius: var(--borderRadius-medium, .375rem); font-size: var(--text-body-size-medium, .875rem);
+  height: 32px; margin: 0; padding: 0; display: inline-flex; list-style: none; }
+.ggt-seg:where([data-size=small]) { font-size: var(--text-body-size-small, .75rem); height: 28px; }
+.ggt-seg-item { flex-grow: 1; margin-top: -1px; margin-bottom: -1px; display: block; position: relative; list-style: none; }
+.ggt-seg-item:not(:last-child) { margin-right: 1px; }
+.ggt-seg-item:not(:last-child):after { background-color: var(--borderColor-default, #d1d9e0);
+  bottom: var(--base-size-8, .5rem); content: ""; right: calc(var(--base-size-2, .125rem)*-1);
+  top: var(--base-size-8, .5rem); width: 1px; position: absolute; }
+.ggt-seg-item:not(:last-child):has(+ [data-selected]):after,
+.ggt-seg-item:not(:last-child):where([data-selected]):after { background-color: #0000; }
+.ggt-seg-item:first-child { margin-left: -1px; }
+.ggt-seg-item:last-child { margin-right: -1px; }
+.ggt-seg-btn { --segmented-control-button-inner-padding: 12px; --segmented-control-button-bg-inset: 4px;
+  --segmented-control-outer-radius: var(--borderRadius-medium, .375rem); border-radius: var(--segmented-control-outer-radius);
+  color: currentColor; cursor: pointer; font-family: inherit; font-size: inherit;
+  font-weight: var(--base-text-weight-normal, 400); height: 100%; padding: var(--segmented-control-button-bg-inset);
+  background-color: #0000; border-width: 0; border-color: #0000; width: 100%; }
+.ggt-seg-btn:focus-visible:not(:disabled) { box-shadow: none;
+  outline: var(--base-size-2, .125rem) solid var(--fgColor-accent, #0969da); outline-offset: -1px; }
+.ggt-seg-content { border-radius: calc(var(--segmented-control-outer-radius) - var(--segmented-control-button-bg-inset)/2);
+  border-style: solid; border-color: #0000; border-width: var(--borderWidth-thin, .0625rem); height: 100%;
+  padding-left: calc(var(--segmented-control-button-inner-padding) - var(--segmented-control-button-bg-inset));
+  padding-right: calc(var(--segmented-control-button-inner-padding) - var(--segmented-control-button-bg-inset));
+  justify-content: center; align-items: center; display: flex; }
+.ggt-seg-btn[aria-pressed=true] { font-weight: var(--base-text-weight-semibold, 600); padding: 0; }
+.ggt-seg-btn[aria-pressed=true] .ggt-seg-content { background-color: var(--controlKnob-bgColor-rest, #fff);
+  border-color: var(--controlKnob-borderColor-rest, #d1d9e0); border-radius: var(--segmented-control-outer-radius);
+  padding-left: var(--segmented-control-button-inner-padding); padding-right: var(--segmented-control-button-inner-padding); }
+.ggt-seg-btn:not([aria-pressed=true]):hover .ggt-seg-content { background-color: var(--controlTrack-bgColor-hover, #e0e6eb); }
+.ggt-seg-btn:not([aria-pressed=true]):active .ggt-seg-content { background-color: var(--controlTrack-bgColor-active, #dae0e7); }
+.ggt-seg-text { position: relative; }
+.ggt-seg-text:after { content: attr(data-text); font-weight: var(--base-text-weight-semibold, 600);
+  pointer-events: none; user-select: none; visibility: hidden; height: 0; display: block; overflow: hidden; }
+
+/* Anchor button (Primer Button, medium) and its counter. */
+.ggt-select-btn { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font: inherit;
+  font-size: var(--text-body-size-medium, .875rem); font-weight: var(--base-text-weight-medium, 500);
+  color: var(--button-default-fgColor-rest, #25292e); background: var(--button-default-bgColor-rest, #f6f8fa);
+  border: var(--borderWidth-thin, .0625rem) solid var(--button-default-borderColor-rest, #d1d9e0);
+  border-radius: var(--borderRadius-medium, .375rem); white-space: nowrap; cursor: pointer; }
 .ggt-select-btn:hover { background: var(--button-default-bgColor-hover, #eff2f5); }
 .ggt-select-btn svg { flex: none; color: var(--fgColor-muted, #59636e); }
-.ggt-counter { padding: 0 6px; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--fgColor-default, #1f2328);
-  background: var(--bgColor-neutral-muted, rgba(129,139,152,.12)); border-radius: 2em; }
 .ggt-select-btn:focus-visible { outline: 2px solid var(--focus-outlineColor, #0969da); outline-offset: -2px; }
+.ggt-counter { padding: 0 6px; font-size: var(--text-body-size-small, .75rem); font-weight: var(--base-text-weight-medium, 500);
+  line-height: 18px; color: var(--fgColor-default, #1f2328); background: var(--bgColor-neutral-muted, #818b981f); border-radius: 2em; }
 
-/* Picking a branch takes a round trip and then replaces the whole view.
-   Without this the graph sits there looking untouched and then blinks into a
-   different shape; with it the click reads as work in progress and the new
-   graph fades up out of the dim rather than cutting. */
+/* Ours: picking a branch takes a round trip and then replaces the whole
+   view, so the click is answered at once and the new graph fades up out of
+   the dim rather than cutting. */
 .ggt-shell { position: relative; }
 .ggt-shell.ggt-busy .ggt-wrap, .ggt-shell.ggt-busy .ggt-footer { opacity: .5; transition: opacity .12s ease-out; }
-.ggt-busy-bar { position: absolute; left: 0; right: 0; top: 0; height: 2px; overflow: hidden; background: var(--bgColor-neutral-muted, rgba(129,139,152,.12)); }
-.ggt-busy-bar::after { content: ""; position: absolute; inset: 0; width: 40%; background: var(--fgColor-accent, #0969da);
-  border-radius: 2px; animation: ggt-slide 1.1s ease-in-out infinite; }
+.ggt-busy-bar { position: absolute; left: 0; right: 0; top: 0; height: 2px; overflow: hidden;
+  background: var(--bgColor-neutral-muted, #818b981f); }
+.ggt-busy-bar::after { content: ""; position: absolute; inset: 0; width: 40%;
+  background: var(--borderColor-accent-emphasis, #0969da); border-radius: 2px; animation: ggt-slide 1.1s ease-in-out infinite; }
 @keyframes ggt-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
 .ggt-spinner { display: inline-block; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor;
   border-top-color: transparent; border-radius: 50%; animation: ggt-spin .7s linear infinite; }
 @keyframes ggt-spin { to { transform: rotate(360deg); } }
+.ggt-item-busy .ggt-sel svg { visibility: visible; animation: ggt-pulse 1s ease-in-out infinite; }
+@keyframes ggt-pulse { 50% { opacity: .25; } }
 .ggt-fade-in { animation: ggt-fade .16s ease-out; }
-/* Picks up where the busy dim left off. Starting from 0 would blank the
-   frame for an instant, which is the flash this is meant to remove. */
 @keyframes ggt-fade { from { opacity: .5; } to { opacity: 1; } }
 `;
 
@@ -345,36 +405,52 @@ function buildBranchPicker(model) {
   panel.setAttribute('aria-label', 'Select branches');
   livePanel = panel;
 
+  // Overlay > SelectPanel > (Header, FilteredActionList > (Header, Container))
+  const wrapper = el('div', 'ggt-sp');
+  wrapper.setAttribute('data-component', 'SelectPanel');
+  wrapper.setAttribute('data-variant', 'anchored');
+  panel.appendChild(wrapper);
+
   const head = el('div', 'ggt-sp-head');
   head.setAttribute('data-component', 'SelectPanel.Header');
   const title = el('h2', 'ggt-sp-title', 'Select branches');
   title.setAttribute('data-component', 'SelectPanel.Title');
   head.appendChild(title);
-  panel.appendChild(head);
+  wrapper.appendChild(head);
+
+  const fal = el('div', 'ggt-fal');
+  fal.setAttribute('data-component', 'FilteredActionList');
+  wrapper.appendChild(fal);
 
   const inputWrap = el('span', 'ggt-input');
   inputWrap.setAttribute('data-component', 'TextInput');
-  inputWrap.appendChild(octicon('search'));
+  inputWrap.setAttribute('data-contrast', 'true');
+  inputWrap.setAttribute('data-block', 'true');
+  const inputIcon = el('span', 'ggt-input-icon');
+  inputIcon.setAttribute('data-component', 'TextInput.LeadingVisual');
+  inputIcon.appendChild(octicon('search'));
   const filter = el('input');
   filter.type = 'text';
   filter.placeholder = 'Find a branch...';
   filter.setAttribute('data-component', 'input');
   filter.setAttribute('aria-label', 'Filter branches');
   filter.value = panelFilter;
-  inputWrap.appendChild(filter);
-  const filterRow = el('div');
+  inputWrap.append(inputIcon, filter);
+  const filterRow = el('div', 'ggt-fal-head');
   filterRow.setAttribute('data-component', 'FilteredActionList.Header');
   filterRow.appendChild(inputWrap);
-  panel.appendChild(filterRow);
+  fal.appendChild(filterRow);
 
-  const listBox = el('div', 'ggt-list-box');
+  const listBox = el('div', 'ggt-fal-body');
   const list = el('ul', 'ggt-list');
   list.setAttribute('data-component', 'ActionList');
+  list.setAttribute('data-variant', 'inset');
+  list.setAttribute('data-dividers', 'true');
   list.setAttribute('role', 'listbox');
   list.setAttribute('aria-multiselectable', 'true');
   list.setAttribute('aria-label', 'Branches');
   listBox.appendChild(list);
-  panel.appendChild(listBox);
+  fal.appendChild(listBox);
 
   let busy = false;
   async function apply(names, row) {
@@ -422,6 +498,18 @@ function buildBranchPicker(model) {
           onPick(item);
         }
       });
+      // GitHub's SelectPanel marks the row under the pointer or the keyboard
+      // as the active descendant; its CSS hangs the accent bar, the stronger
+      // background and the divider suppression off that attribute.
+      const activate = () => {
+        for (const other of list.querySelectorAll('[data-is-active-descendant]')) {
+          other.removeAttribute('data-is-active-descendant');
+        }
+        item.setAttribute('data-is-active-descendant', 'activated-directly');
+      };
+      item.addEventListener('mouseenter', activate);
+      item.addEventListener('focus', activate);
+      item.addEventListener('mouseleave', () => item.removeAttribute('data-is-active-descendant'));
     }
     list.appendChild(item);
     return item;
