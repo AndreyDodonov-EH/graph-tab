@@ -71,8 +71,14 @@ Works on Chrome and Edge, Firefox is WiP.
   modules refresh on every page load. The overlay is fixed-positioned on
   `document.body`: inside the graph shell it would be part of the toolbar's
   layout and clipped by the shell's `overflow`. A pick applies immediately —
-  no Apply, no close button; the two rows at the top ("All branches",
-  "Only <default>") are the bulk actions. While the pick is in flight the
+  no Apply, no close button. The two bulk settings live in the header as a
+  Primer SegmentedControl ("Default | All") rather than as rows: they act on
+  the whole list, and GitHub likewise puts the one switch its branch panel
+  has above the list, never inside it. Two named segments also avoid the lie
+  a select-all checkbox would tell — a graph has to draw at least one branch,
+  so "unchecked" has no honest meaning — and hand-picking simply leaves
+  neither segment active, which is what "custom" looks like. While the pick
+  is in flight the
   button spins, a progress bar rides the top of the frame and the rows dim,
   and the rebuilt graph fades up out of that dim instead of cutting.
 - **Ordering** (`src/order.js`): the network array's absolute position is a

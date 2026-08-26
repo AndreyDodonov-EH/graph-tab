@@ -141,6 +141,15 @@ function buildShell(subtitle) {
 // there, and would fight our own rules when it was. The `data-component`
 // attributes are kept: they carry no styling, and they say what each part is.
 //
+// The two bulk actions live in the header as a Primer SegmentedControl
+// ("Default | All"), not as rows in the list: they act on the whole list, so
+// putting them at the same level as the branches they control read as a
+// mistake — and GitHub itself puts the one switch its branch panel has
+// (Branches | Tags) above the list, never inside it. Two named segments also
+// avoid the lie a select-all checkbox would tell here: a graph has to draw
+// at least one branch, so "unchecked" has no honest meaning. Hand-picking
+// leaves neither segment active, which is exactly what "custom" looks like.
+//
 // Two behaviours matter beyond the looks:
 //
 //   - The overlay is fixed-positioned on document.body, anchored to the
@@ -176,8 +185,24 @@ const UI_CSS = `
 .ggt-panel[hidden] { display: none; }
 .ggt-panel[aria-busy="true"] { pointer-events: none; }
 
-.ggt-sp-head { display: flex; align-items: center; padding: 8px 8px 0; }
+.ggt-sp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 8px 0 16px; }
 .ggt-sp-title { margin: 0; font-size: 14px; line-height: 21px; font-weight: 600; }
+
+/* Primer SegmentedControl, small: a track holding two knobs, the active one
+   raised. Hairlines separate inactive neighbours, as Primer's does. */
+.ggt-seg { display: inline-flex; margin: 0; padding: 0; list-style: none;
+  background: var(--controlTrack-bgColor-rest, #e6eaef); border-radius: 6px; }
+.ggt-seg-item { position: relative; display: inline-flex; border: 1px solid transparent; border-radius: 6px; }
+.ggt-seg-item + .ggt-seg-item::before { content: ""; position: absolute; left: -1px; top: 6px; bottom: 6px;
+  border-left: 1px solid var(--borderColor-default, #d1d9e0); }
+.ggt-seg-item[aria-current="true"] { background: var(--controlKnob-bgColor-rest, #fff);
+  border-color: var(--controlKnob-borderColor-rest, #d1d9e0); box-shadow: var(--shadow-resting-small, 0 1px 1px 0 rgba(31,35,40,.04)); }
+.ggt-seg-item[aria-current="true"]::before, .ggt-seg-item[aria-current="true"] + .ggt-seg-item::before { border-left-color: transparent; }
+.ggt-seg-btn { height: 26px; padding: 0 12px; font: inherit; font-size: 12px; line-height: 26px;
+  color: var(--fgColor-default, #1f2328); background: none; border: 0; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.ggt-seg-item[aria-current="true"] .ggt-seg-btn { font-weight: 600; }
+.ggt-seg-item:not([aria-current="true"]) .ggt-seg-btn:hover { color: var(--fgColor-default, #1f2328); background: var(--control-transparent-bgColor-hover, rgba(129,139,152,.15)); }
+.ggt-seg-btn:focus-visible { outline: 2px solid var(--focus-outlineColor, #0969da); outline-offset: -2px; }
 
 .ggt-input { display: flex; align-items: center; height: 32px; margin: 8px; padding: 0 0 0 8px;
   background: var(--bgColor-muted, #f6f8fa); border: 1px solid var(--control-borderColor-rest, #d1d9e0);
@@ -384,20 +409,32 @@ function buildBranchPicker(model) {
     return item;
   }
 
-  // Bulk actions first, as two ordinary rows — what replaces footer buttons.
+  // The scope switch: the only two settings worth one click, in the header
+  // where a control over the whole list belongs. A branch that cannot be
+  // pulled in is not part of "All", or the segment could never look active.
   const names = branches.map((branch) => branch.name);
   const pickable = branches.filter((branch) => branch.loaded || canFetch).map((b) => b.name);
-  addRow({
-    label: 'All branches',
-    on: selected.size === branches.length,
-    onPick: (row) => apply(pickable, row),
-  });
-  if (defaultBranch && names.includes(defaultBranch)) {
-    addRow({
-      label: `Only ${defaultBranch}`,
-      on: selected.size === 1 && selected.has(defaultBranch),
-      onPick: (row) => apply([defaultBranch], row),
-    });
+  const hasDefault = defaultBranch && names.includes(defaultBranch);
+  if (hasDefault) {
+    const isDefaultOnly = selected.size === 1 && selected.has(defaultBranch);
+    const isAll = pickable.length > 0 && pickable.every((name) => selected.has(name));
+    const seg = el('ul', 'ggt-seg');
+    seg.setAttribute('role', 'group');
+    seg.setAttribute('aria-label', 'Branch scope');
+    const segment = (label, active, names_, title_) => {
+      const item = el('li', 'ggt-seg-item');
+      item.setAttribute('aria-current', String(active));
+      const btn = el('button', 'ggt-seg-btn', label);
+      btn.type = 'button';
+      btn.title = title_;
+      // Re-applying the setting already in force would only cost a fetch.
+      if (!active) btn.addEventListener('click', () => apply(names_, null));
+      item.appendChild(btn);
+      seg.appendChild(item);
+    };
+    segment('Default', isDefaultOnly, [defaultBranch], `Draw only ${defaultBranch}`);
+    segment('All', isAll, pickable, 'Draw every branch');
+    head.appendChild(seg);
   }
 
   const rows = [];
