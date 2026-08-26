@@ -46,44 +46,6 @@ export function chronoIndex(dates, date) {
   return lo - 1 + (valid ? fractionOfDay(date) : 0);
 }
 
-// Max-heap on idx; ties broken by oid so the order is deterministic.
-function makeHeap() {
-  const items = [];
-  const above = (a, b) => (a.idx !== b.idx ? a.idx > b.idx : a.oid > b.oid);
-  return {
-    get size() {
-      return items.length;
-    },
-    push(item) {
-      items.push(item);
-      for (let i = items.length - 1; i > 0; ) {
-        const parent = (i - 1) >> 1;
-        if (!above(items[i], items[parent])) break;
-        [items[i], items[parent]] = [items[parent], items[i]];
-        i = parent;
-      }
-    },
-    pop() {
-      const top = items[0];
-      const last = items.pop();
-      if (items.length > 0) {
-        items[0] = last;
-        for (let i = 0; ; ) {
-          const l = 2 * i + 1;
-          const r = l + 1;
-          let best = i;
-          if (l < items.length && above(items[l], items[best])) best = l;
-          if (r < items.length && above(items[r], items[best])) best = r;
-          if (best === i) break;
-          [items[i], items[best]] = [items[best], items[i]];
-          i = best;
-        }
-      }
-      return top;
-    },
-  };
-}
-
 /**
  * Newest-first order for `commits` (each { oid, parents, idx }) in which no
  * commit appears after one of its own parents. Among the commits that are
@@ -94,35 +56,47 @@ function makeHeap() {
  */
 export function orderCommits(commits) {
   const byOid = new Map(commits.map((commit) => [commit.oid, commit]));
-  const pending = new Map(); // oid -> number of loaded children not yet emitted
-  for (const commit of commits) pending.set(commit.oid, 0);
+  // Deduped so a commit that lists the same parent twice is counted once.
+  const parentsOf = new Map(commits.map((commit) => [commit.oid, [...new Set(commit.parents)]]));
+  const pending = new Map(commits.map((commit) => [commit.oid, 0])); // loaded children left
   for (const commit of commits) {
-    for (const parent of new Set(commit.parents)) {
+    for (const parent of parentsOf.get(commit.oid)) {
       if (pending.has(parent)) pending.set(parent, pending.get(parent) + 1);
     }
   }
 
-  const heap = makeHeap();
-  for (const commit of commits) if (pending.get(commit.oid) === 0) heap.push(commit);
+  // The ready frontier is the open branch tips — single digits in practice,
+  // against hundreds of commits — so a linear pick beats a heap and has
+  // nowhere for an index bug to hide. Ties break on oid, for determinism.
+  const ready = commits.filter((commit) => pending.get(commit.oid) === 0);
+  const takeNewest = () => {
+    let best = 0;
+    for (let i = 1; i < ready.length; i++) {
+      const a = ready[i];
+      const b = ready[best];
+      if (a.idx !== b.idx ? a.idx > b.idx : a.oid > b.oid) best = i;
+    }
+    return ready.splice(best, 1)[0];
+  };
 
   const ordered = [];
-  const emitted = new Set();
-  while (heap.size > 0) {
-    const commit = heap.pop();
-    if (emitted.has(commit.oid)) continue;
-    emitted.add(commit.oid);
+  while (ready.length > 0) {
+    const commit = takeNewest();
     ordered.push(commit);
-    for (const parent of new Set(commit.parents)) {
+    // A commit joins `ready` only as its last child is emitted, so it can
+    // never be picked twice and needs no seen-set.
+    for (const parent of parentsOf.get(commit.oid)) {
       if (!pending.has(parent)) continue;
       const left = pending.get(parent) - 1;
       pending.set(parent, left);
-      if (left === 0) heap.push(byOid.get(parent));
+      if (left === 0) ready.push(byOid.get(parent));
     }
   }
 
   // A cycle (impossible in git, but the data is third-party) would strand
   // commits; append them by idx rather than dropping rows on the floor.
   if (ordered.length < commits.length) {
+    const emitted = new Set(ordered.map((commit) => commit.oid));
     const rest = commits.filter((commit) => !emitted.has(commit.oid));
     rest.sort((a, b) => b.idx - a.idx);
     ordered.push(...rest);

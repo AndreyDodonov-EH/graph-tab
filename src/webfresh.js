@@ -235,12 +235,18 @@ async function fetchCommit(base, oid) {
  */
 export async function webFreshen(owner, repo, refs, byOid, onProgress = () => {}) {
   const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  const heads = await mapLimited(refs, async (ref) => ({
-    name: ref.name,
-    snapOid: ref.oid,
-    materialize: !!ref.materialize,
-    oid: await latestOid(base, ref.name),
-  }));
+  const heads = await mapLimited(refs, async (ref) => {
+    const oid = await latestOid(base, ref.name);
+    return {
+      name: ref.name,
+      snapOid: ref.oid,
+      materialize: !!ref.materialize,
+      oid,
+      // Recorded now: the fallback below rewrites `oid`, and the splice
+      // loop still needs to know which branches had actually moved.
+      moved: !!ref.oid && !!oid && oid !== ref.oid,
+    };
+  });
 
   // Shared memo so parallel branch walks meeting at a merge fetch a page
   // once. Cache hits are free: only network fetches count toward the cap.
@@ -285,7 +291,6 @@ export async function webFreshen(owner, repo, refs, byOid, onProgress = () => {}
       const oids = wave
         .filter((oid) => !stop(oid) && !seen.has(oid))
         .slice(0, limit - chain.length);
-      if (oids.length === 0) break;
       for (const oid of oids) seen.add(oid);
       const commits = await Promise.all(oids.map(page));
       chain.push(...commits);
@@ -299,7 +304,6 @@ export async function webFreshen(owner, repo, refs, byOid, onProgress = () => {}
   const chains = await Promise.all(
     heads.map((head) => {
       if (!head.oid) return null; // branch deleted; dropped below
-      head.moved = !!head.snapOid && head.oid !== head.snapOid;
       if (byOid.has(head.oid)) return []; // already drawn
       if (head.moved) {
         // Moved past the snapshot: the gap has to close, or the branch keeps

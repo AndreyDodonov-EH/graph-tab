@@ -37,6 +37,7 @@ export function layout(commits, options = {}) {
   // grow a line that comes from nowhere; from then on it is an ordinary lane
   // that happens to live at x = 0.
   const pinned = options.pinnedOid && commits.some((c) => c.oid === options.pinnedOid);
+  const floor = pinned ? 1 : 0; // lowest lane index anything else may take
   if (pinned) {
     lanes[0] = { sha: options.pinnedOid, color: nextColor++, reserved: true };
     laneCount = 1;
@@ -46,9 +47,8 @@ export function layout(commits, options = {}) {
   const freeLane = () => {
     // Lane 0 stays the pinned branch's for the whole graph, even after its
     // history ends, so the leftmost line never turns into something else.
-    const from = pinned ? 1 : 0;
-    const k = lanes.indexOf(null, from);
-    return k === -1 ? Math.max(lanes.length, from) : k;
+    const k = lanes.indexOf(null, floor);
+    return k === -1 ? Math.max(lanes.length, floor) : k;
   };
 
   for (let row = 0; row < commits.length; row++) {
@@ -119,8 +119,7 @@ export function layout(commits, options = {}) {
     }
 
     laneCount = Math.max(laneCount, x + 1, lanes.length);
-    const keep = pinned ? 1 : 0;
-    while (lanes.length > keep && lanes[lanes.length - 1] === null) lanes.pop();
+    while (lanes.length > floor && lanes[lanes.length - 1] === null) lanes.pop();
   }
 
   // Parents that never arrived (outside the fetched window): dashed tails so

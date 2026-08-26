@@ -19,11 +19,6 @@ const PATHS = {
   check:
     'M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 ' +
     '.018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z',
-  x:
-    'M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1' +
-    '-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l' +
-    '-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 ' +
-    '0 0 1 0-1.06Z',
   search:
     'M10.68 11.74a6 6 0 0 1-7.922-8.982 6 6 0 0 1 8.982 7.922l3.04 3.04a.749.749 0 0 1-.326 ' +
     '1.275.749.749 0 0 1-.734-.215ZM11.5 7a4.499 4.499 0 1 0-8.997 0A4.499 4.499 0 0 0 11.5 7Z',
@@ -31,22 +26,31 @@ const PATHS = {
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
+// One prototype per icon, cloned per use: the picker asks for two icons per
+// branch row and rebuilds on every render, and cloning beats replaying a
+// dozen setAttribute calls each time.
+const prototypes = new Map();
+
 /** A 16px Octicon <svg>, presented the way GitHub presents its own. */
-export function octicon(name, className = '') {
-  const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 16 16');
-  svg.setAttribute('width', '16');
-  svg.setAttribute('height', '16');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.setAttribute('focusable', 'false');
-  svg.setAttribute('data-component', 'Octicon');
-  svg.setAttribute('fill', 'currentColor');
-  svg.setAttribute('display', 'inline-block');
-  svg.setAttribute('overflow', 'visible');
-  svg.setAttribute('style', 'vertical-align:text-bottom');
-  svg.setAttribute('class', `octicon octicon-${name}${className ? ' ' + className : ''}`);
-  const path = document.createElementNS(SVG_NS, 'path');
-  path.setAttribute('d', PATHS[name]);
-  svg.appendChild(path);
-  return svg;
+export function octicon(name) {
+  let proto = prototypes.get(name);
+  if (!proto) {
+    proto = document.createElementNS(SVG_NS, 'svg');
+    proto.setAttribute('viewBox', '0 0 16 16');
+    proto.setAttribute('width', '16');
+    proto.setAttribute('height', '16');
+    proto.setAttribute('aria-hidden', 'true');
+    proto.setAttribute('focusable', 'false');
+    proto.setAttribute('data-component', 'Octicon');
+    proto.setAttribute('fill', 'currentColor');
+    proto.setAttribute('display', 'inline-block');
+    proto.setAttribute('overflow', 'visible');
+    proto.setAttribute('style', 'vertical-align:text-bottom');
+    proto.setAttribute('class', `octicon octicon-${name}`);
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', PATHS[name]);
+    proto.appendChild(path);
+    prototypes.set(name, proto);
+  }
+  return proto.cloneNode(true);
 }

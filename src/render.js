@@ -155,8 +155,8 @@ function buildShell(subtitle) {
 //   - The overlay is fixed-positioned on document.body, anchored to the
 //     button. Inside the graph shell it would be part of the toolbar's layout
 //     and clipped by the shell's overflow.
-//   - A click applies straight away. No Apply and no close button: the two
-//     rows at the top are the bulk actions, and an outside click or Escape
+//   - A click applies straight away. No Apply and no close button: the bulk
+//     actions are the header switch above, and an outside click or Escape
 //     closes the menu.
 //
 // The stylesheet is injected from here rather than shipped in style.css: the
@@ -195,7 +195,11 @@ const UI_CSS = `
 /* Overlay */
 .ggt-panel { background-color: var(--overlay-bgColor, #fff); border-radius: var(--borderRadius-large, .75rem);
   box-shadow: var(--shadow-floating-small, 0 0 0 1px #d1d9e080, 0 6px 12px -3px #25292e0a, 0 6px 18px 0 #25292e1f);
-  min-width: 192px; max-width: calc(100vw - 2rem); height: auto; position: absolute; overflow: hidden; outline: 1px solid #0000; }
+  height: auto; overflow: hidden; outline: 1px solid #0000;
+  /* Primer anchors its overlay with CSS anchor positioning; this one is
+     placed against the button by place(), so it is fixed to the viewport and
+     sized here rather than by Primer's min/max-width pair. */
+  position: fixed; z-index: 1000; width: ${PANEL_WIDTH}px; }
 .ggt-panel:focus { outline: none; }
 .ggt-panel[hidden] { display: none; }
 .ggt-panel[aria-busy="true"] { pointer-events: none; }
@@ -267,10 +271,10 @@ const UI_CSS = `
 .ggt-label { color: var(--fgColor-default, #1f2328); font-size: var(--text-body-size-medium, .875rem);
   font-weight: var(--base-text-weight-normal, 400); grid-area: label; line-height: 20px; position: relative;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ggt-pill { grid-area: trailingVisual; padding: 0 7px; font-size: var(--text-body-size-small, .75rem);
+.ggt-row-pill { grid-area: trailingVisual; padding: 0 7px; font-size: var(--text-body-size-small, .75rem);
   font-weight: var(--base-text-weight-medium, 500); line-height: 18px; color: var(--fgColor-muted, #59636e);
   border: var(--borderWidth-thin, .0625rem) solid var(--borderColor-default, #d1d9e0); border-radius: 2em; white-space: nowrap; }
-.ggt-pill-fetch { color: var(--fgColor-attention, #9a6700); border-color: var(--borderColor-attention-muted, #d4a72c66); }
+.ggt-row-pill-fetch { color: var(--fgColor-attention, #9a6700); border-color: var(--borderColor-attention-muted, #d4a72c66); }
 .ggt-list-empty { padding: 6px 16px 10px; color: var(--fgColor-muted, #59636e); list-style: none; }
 
 /* SegmentedControl */
@@ -310,28 +314,22 @@ const UI_CSS = `
 .ggt-seg-text:after { content: attr(data-text); font-weight: var(--base-text-weight-semibold, 600);
   pointer-events: none; user-select: none; visibility: hidden; height: 0; display: block; overflow: hidden; }
 
-/* Anchor button (Primer Button, medium) and its counter. */
-.ggt-select-btn { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font: inherit;
-  font-size: var(--text-body-size-medium, .875rem); font-weight: var(--base-text-weight-medium, 500);
-  color: var(--button-default-fgColor-rest, #25292e); background: var(--button-default-bgColor-rest, #f6f8fa);
-  border: var(--borderWidth-thin, .0625rem) solid var(--button-default-borderColor-rest, #d1d9e0);
-  border-radius: var(--borderRadius-medium, .375rem); white-space: nowrap; cursor: pointer; }
-.ggt-select-btn:hover { background: var(--button-default-bgColor-hover, #eff2f5); }
+/* Anchor button: .ggt-btn (style.css) is already Primer's medium button, so
+   only the slot layout and the counter belong here. */
+.ggt-select-btn { gap: 8px; white-space: nowrap; }
 .ggt-select-btn svg { flex: none; color: var(--fgColor-muted, #59636e); }
-.ggt-select-btn:focus-visible { outline: 2px solid var(--focus-outlineColor, #0969da); outline-offset: -2px; }
 .ggt-counter { padding: 0 6px; font-size: var(--text-body-size-small, .75rem); font-weight: var(--base-text-weight-medium, 500);
   line-height: 18px; color: var(--fgColor-default, #1f2328); background: var(--bgColor-neutral-muted, #818b981f); border-radius: 2em; }
 
 /* Ours: picking a branch takes a round trip and then replaces the whole
    view, so the click is answered at once and the new graph fades up out of
    the dim rather than cutting. */
-.ggt-shell { position: relative; }
 .ggt-shell.ggt-busy .ggt-wrap, .ggt-shell.ggt-busy .ggt-footer { opacity: .5; transition: opacity .12s ease-out; }
 .ggt-busy-bar { position: absolute; left: 0; right: 0; top: 0; height: 2px; overflow: hidden;
   background: var(--bgColor-neutral-muted, #818b981f); }
 .ggt-busy-bar::after { content: ""; position: absolute; inset: 0; width: 40%;
-  background: var(--borderColor-accent-emphasis, #0969da); border-radius: 2px; animation: ggt-slide 1.1s ease-in-out infinite; }
-@keyframes ggt-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+  background: var(--borderColor-accent-emphasis, #0969da); border-radius: 2px; animation: ggt-busy-slide 1.1s ease-in-out infinite; }
+@keyframes ggt-busy-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
 .ggt-spinner { display: inline-block; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor;
   border-top-color: transparent; border-radius: 50%; animation: ggt-spin .7s linear infinite; }
 @keyframes ggt-spin { to { transform: rotate(360deg); } }
@@ -352,22 +350,18 @@ function ensureUiStyle() {
 /**
  * Show that a pick is being fetched, without taking the graph away: the
  * anchor button spins, a progress bar rides the top of the frame and the
- * rows dim. render() replaces the whole subtree when the data lands, so the
- * state does not have to be cleared.
+ * rows dim. There is no "off": the state lasts until the data lands, and
+ * render() clears it by rebuilding the subtree.
  */
-export function setViewBusy(container, on) {
-  ensureUiStyle();
+export function markViewBusy(container) {
   const shell = container.querySelector('.ggt-shell');
   if (!shell) return;
-  shell.classList.toggle('ggt-busy', on);
-  shell.querySelector(':scope > .ggt-busy-bar')?.remove();
-  if (on) shell.appendChild(el('div', 'ggt-busy-bar'));
-  const button = document.querySelector('.ggt-select-btn');
-  const visual = button?.querySelector('[data-component="leadingVisual"]');
+  shell.classList.add('ggt-busy');
+  shell.appendChild(el('div', 'ggt-busy-bar'));
+  const visual = container.querySelector('.ggt-select-btn [data-component="leadingVisual"]');
   if (!visual) return;
-  button.setAttribute('data-loading', String(on));
   visual.textContent = '';
-  visual.appendChild(on ? el('span', 'ggt-spinner') : octicon('git-branch'));
+  visual.appendChild(el('span', 'ggt-spinner'));
 }
 
 /** Drop the overlay — the view is going away and it lives on document.body. */
@@ -382,19 +376,18 @@ export function closeBranchPicker() {
 
 function buildBranchPicker(model) {
   const { branches, selected, defaultBranch, onSelectBranches, canFetch } = model;
-  ensureUiStyle();
   detachPanel?.();
   detachPanel = null;
   livePanel?.remove();
 
   const counter = el('span', 'ggt-counter', `${selected.size}/${branches.length}`);
-  const button = el('button', 'ggt-select-btn');
+  const button = el('button', 'ggt-btn ggt-select-btn');
   button.type = 'button';
   button.setAttribute('data-component', 'Button');
   button.setAttribute('aria-haspopup', 'listbox');
   button.setAttribute('aria-expanded', 'false');
   button.title = 'Choose which branches the graph draws';
-  const leading = el('span', 'ggt-btn-visual');
+  const leading = el('span');
   leading.setAttribute('data-component', 'leadingVisual');
   leading.appendChild(octicon('git-branch'));
   button.append(leading, el('span', null, 'Branches'), counter, octicon('triangle-down'));
@@ -408,7 +401,6 @@ function buildBranchPicker(model) {
   // Overlay > SelectPanel > (Header, FilteredActionList > (Header, Container))
   const wrapper = el('div', 'ggt-sp');
   wrapper.setAttribute('data-component', 'SelectPanel');
-  wrapper.setAttribute('data-variant', 'anchored');
   panel.appendChild(wrapper);
 
   const head = el('div', 'ggt-sp-head');
@@ -425,7 +417,6 @@ function buildBranchPicker(model) {
   const inputWrap = el('span', 'ggt-input');
   inputWrap.setAttribute('data-component', 'TextInput');
   inputWrap.setAttribute('data-contrast', 'true');
-  inputWrap.setAttribute('data-block', 'true');
   const inputIcon = el('span', 'ggt-input-icon');
   inputIcon.setAttribute('data-component', 'TextInput.LeadingVisual');
   inputIcon.appendChild(octicon('search'));
@@ -452,6 +443,7 @@ function buildBranchPicker(model) {
   listBox.appendChild(list);
   fal.appendChild(listBox);
 
+  let activeRow = null; // the row the pointer or the keyboard is on
   let busy = false;
   async function apply(names, row) {
     if (busy) return;
@@ -482,7 +474,7 @@ function buildBranchPicker(model) {
     name.setAttribute('data-component', 'ActionList.Item.Label');
     sub.appendChild(name);
     if (tag) {
-      const pill = el('span', `ggt-pill${tagClass ? ' ' + tagClass : ''}`, tag);
+      const pill = el('span', `ggt-row-pill${tagClass ? ' ' + tagClass : ''}`, tag);
       pill.setAttribute('data-component', 'Label');
       if (tagTitle) pill.title = tagTitle;
       sub.appendChild(pill);
@@ -502,14 +494,16 @@ function buildBranchPicker(model) {
       // as the active descendant; its CSS hangs the accent bar, the stronger
       // background and the divider suppression off that attribute.
       const activate = () => {
-        for (const other of list.querySelectorAll('[data-is-active-descendant]')) {
-          other.removeAttribute('data-is-active-descendant');
-        }
+        activeRow?.removeAttribute('data-is-active-descendant');
+        activeRow = item;
         item.setAttribute('data-is-active-descendant', 'activated-directly');
       };
       item.addEventListener('mouseenter', activate);
       item.addEventListener('focus', activate);
-      item.addEventListener('mouseleave', () => item.removeAttribute('data-is-active-descendant'));
+      item.addEventListener('mouseleave', () => {
+        item.removeAttribute('data-is-active-descendant');
+        if (activeRow === item) activeRow = null;
+      });
     }
     list.appendChild(item);
     return item;
@@ -559,23 +553,36 @@ function buildBranchPicker(model) {
       (branch.name === defaultBranch ? 0 : 2) - (selected.has(branch.name) ? 1 : 0);
     return rank(a) - rank(b) || a.name.localeCompare(b.name);
   });
+  // One decision per row rather than four ternaries over the same state: a
+  // branch is loaded, or it can be pulled in, or nothing can reach it —
+  // and separately it may be the default. Nothing can pull an unloaded
+  // branch in without a live ref source: a private repository rejects
+  // anonymous git and needs the freshness opt-in.
+  const KINDS = {
+    loaded: {},
+    fetch: {
+      tag: 'fetch',
+      tagClass: 'ggt-row-pill-fetch',
+      tagTitle: 'Outside the loaded window — picking this pulls the branch in.',
+    },
+    unavailable: {
+      tag: 'unavailable',
+      tagClass: 'ggt-row-pill-fetch',
+      tagTitle: 'Outside the loaded window. Tick "fetch fresh commits" to make it available.',
+      disabled: true,
+    },
+  };
   for (const branch of ordered) {
-    // Nothing can pull an unloaded branch in without a live ref source: a
-    // private repository rejects anonymous git and needs the freshness opt-in.
-    const locked = !branch.loaded && !canFetch;
+    const kind = KINDS[branch.loaded ? 'loaded' : canFetch ? 'fetch' : 'unavailable'];
     const on = selected.has(branch.name);
     const only = on && selected.size === 1;
     const item = addRow({
+      ...kind,
       label: branch.name,
       on,
-      tag: branch.name === defaultBranch ? 'default' : branch.loaded ? '' : canFetch ? 'fetch' : 'unavailable',
-      tagClass: branch.name === defaultBranch ? '' : 'ggt-pill-fetch',
-      tagTitle: branch.loaded
-        ? ''
-        : canFetch
-          ? 'Outside the loaded window — picking this pulls the branch in.'
-          : 'Outside the loaded window. Tick "fetch fresh commits" to make it available.',
-      disabled: locked,
+      // The default branch says so instead of its state; its tooltip still
+      // explains the state when there is one to explain.
+      ...(branch.name === defaultBranch ? { tag: 'default', tagClass: '' } : {}),
       onPick: (row) => {
         // A graph of no branches is not a state worth reaching by accident.
         if (only) return;
@@ -612,16 +619,23 @@ function buildBranchPicker(model) {
   function place() {
     const box = button.getBoundingClientRect();
     const left = Math.max(8, Math.min(box.right - PANEL_WIDTH, innerWidth - PANEL_WIDTH - 8));
-    Object.assign(panel.style, {
-      position: 'fixed',
-      zIndex: '1000',
-      width: `${PANEL_WIDTH}px`,
-      left: `${left}px`,
-      top: `${box.bottom + 4}px`,
-      maxHeight: `${Math.max(180, innerHeight - box.bottom - 24)}px`,
-    });
+    panel.style.left = `${left}px`;
+    panel.style.top = `${box.bottom + 4}px`;
+    panel.style.maxHeight = `${Math.max(180, innerHeight - box.bottom - 24)}px`;
   }
 
+  // Scroll fires from every scroller on a GitHub page; measuring the anchor
+  // forces layout, so the work is coalesced into one frame and the listener
+  // stays passive.
+  let placeQueued = false;
+  const placeSoon = () => {
+    if (placeQueued) return;
+    placeQueued = true;
+    requestAnimationFrame(() => {
+      placeQueued = false;
+      place();
+    });
+  };
   const onDocClick = (event) => {
     if (!panel.contains(event.target) && !button.contains(event.target)) close();
   };
@@ -636,8 +650,8 @@ function buildBranchPicker(model) {
   const detach = () => {
     document.removeEventListener('click', onDocClick, true);
     document.removeEventListener('keydown', onKey, true);
-    removeEventListener('scroll', place, true);
-    removeEventListener('resize', place);
+    removeEventListener('scroll', placeSoon, true);
+    removeEventListener('resize', placeSoon);
   };
   function close() {
     panel.hidden = true;
@@ -657,8 +671,8 @@ function buildBranchPicker(model) {
     requestAnimationFrame(place);
     document.addEventListener('click', onDocClick, true);
     document.addEventListener('keydown', onKey, true);
-    addEventListener('scroll', place, true);
-    addEventListener('resize', place);
+    addEventListener('scroll', placeSoon, { capture: true, passive: true });
+    addEventListener('resize', placeSoon);
     detachPanel = detach;
     if (focusFilter) filter.focus();
   }
@@ -680,9 +694,7 @@ function buildBranchPicker(model) {
   // under the pointer after every pick.
   if (panelOpen) open(false);
 
-  const box = el('div', 'ggt-picker');
-  box.appendChild(button);
-  return box;
+  return button;
 }
 
 function avatarFallback(commit) {
@@ -704,7 +716,7 @@ export function render(container, model) {
   const {
     owner, repo, commits, graph, heads, tags, fresh, filtered, hasMore,
     total, loaded, olderCount, failedWindows, onLoadOlder, onRefresh,
-    private: priv, privateFresh, onToggleFresh, branches, selected, truncated = [],
+    private: priv, privateFresh, onToggleFresh, branches, truncated = [],
   } = model;
 
   const refsByOid = new Map();

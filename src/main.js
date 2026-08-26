@@ -7,7 +7,7 @@
 import { ensureTab, markTabSelected, markTabDeselected, repoNav, TAB_ID } from './tab.js';
 import { openRepoGraph, privateFreshEnabled, setPrivateFreshEnabled } from './data.js';
 import { layout } from './layout.js';
-import { render, renderStatus, closeBranchPicker, setViewBusy } from './render.js';
+import { render, renderStatus, closeBranchPicker, markViewBusy } from './render.js';
 import { maybeWelcome } from './welcome.js';
 
 const VIEW_ID = 'ggt-view';
@@ -105,10 +105,6 @@ async function loadAndRender(view, repoRef) {
 
 function rerender(view) {
   const { commits, filtered } = source.view();
-  // Pin the default branch to the leftmost lane, so the outer line of the
-  // graph always means the same thing no matter which topic branch happens
-  // to carry the newest commit.
-  const pinnedOid = source.heads.find((head) => head.name === source.defaultBranch)?.oid;
   // Reloading via a fresh source re-fetches meta (new nethash) and re-runs
   // freshen(); used by both the Refresh button and the opt-in toggle.
   const reload = () => {
@@ -120,7 +116,7 @@ function rerender(view) {
     owner: source.owner,
     repo: source.repo,
     commits,
-    graph: layout(commits, { pinnedOid }),
+    graph: layout(commits, { pinnedOid: source.pinnedOid }),
     heads: source.heads,
     branches: source.branches,
     selected: source.selected,
@@ -139,7 +135,7 @@ function rerender(view) {
     hasMore: source.hasMore(),
     onRefresh: reload,
     onLoadOlder: async () => {
-      setViewBusy(view, true);
+      markViewBusy(view);
       await source.loadOlder();
       rerender(view);
     },
@@ -150,7 +146,7 @@ function rerender(view) {
     // Adding branches only ever adds commits, so the loaded window survives:
     // no meta/chunk refetch, just the pull for the newly ticked branches.
     onSelectBranches: async (names) => {
-      setViewBusy(view, true);
+      markViewBusy(view);
       await source.selectBranches(names);
       rerender(view);
     },

@@ -206,7 +206,7 @@ function reachableFrom(byOid, headOids) {
 // the branch then reaches further down than what was fetched, and only a stub
 // of it can be drawn — which layout() finishes with a dashed tail rather than
 // pretending the history ends there.
-function collectFrom(tip, fetched, isKnown) {
+function collectFrom(tip, fetched, known) {
   const chain = [];
   const seen = new Set();
   let wave = [tip];
@@ -214,7 +214,7 @@ function collectFrom(tip, fetched, isKnown) {
   while (wave.length > 0) {
     const next = [];
     for (const oid of wave) {
-      if (seen.has(oid) || isKnown(oid)) continue;
+      if (seen.has(oid) || known.has(oid)) continue;
       const commit = fetched.get(oid);
       if (!commit) {
         closes = false;
@@ -273,13 +273,14 @@ async function materialiseGit(owner, repo, dates, branches, byOid) {
     }
   }
 
-  const isKnown = (oid) => byOid.has(oid);
   const truncated = [];
   let fresh = true;
   for (const branch of branches) {
     if (byOid.has(branch.oid)) continue;
-    const { chain, closes } = collectFrom(branch.oid, fetched, isKnown);
-    const bridgeable = branch.snapOid && branch.snapOid !== branch.oid && byOid.has(branch.snapOid);
+    const { chain, closes } = collectFrom(branch.oid, fetched, byOid);
+    // The head is known to be missing from the window here, so a snapshot
+    // oid that *is* loaded is necessarily a different, older commit.
+    const bridgeable = byOid.has(branch.snapOid);
     if (chain.length === 0 || (!closes && bridgeable)) {
       // Either nothing came back, or the branch moved and the gap could not be
       // bridged. A consistent, slightly stale head beats commits floating
@@ -354,6 +355,20 @@ async function materialiseWeb(owner, repo, dates, branches, byOid, onProgress) {
  */
 export async function openRepoGraph(owner, repo, onProgress = () => {}) {
   const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+
+  // The ref list and the tags depend on nothing but the repository, so they
+  // ride alongside the snapshot load rather than behind it — otherwise every
+  // repo page pays a whole extra round trip before the graph can be drawn.
+  // Rejections are caught here so an early failure cannot go unhandled while
+  // the snapshot is still loading; the callers below read the result.
+  const priv = isPrivateRepo();
+  const optIn = privateFreshEnabled();
+  const refsPending = priv
+    ? optIn && webBranches(owner, repo).catch(() => null)
+    : lsRefs(owner, repo).catch(() => null);
+  // Tags are decoration: losing them must not revert a good freshen.
+  const tagsPending = priv && optIn && webTags(owner, repo).catch(() => []);
+
   const meta = await fetchJson(`${base}/network/meta`, PENDING_DELAYS_MS);
   if (!meta || typeof meta.nethash !== 'string') {
     throw new Error('No network-graph data for this repository (empty repo, or GitHub changed the endpoint).');
@@ -388,47 +403,38 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
   // The snapshot's head list is the fallback; the live ref list is better
   // (it has branches the snapshot has not caught up with) and is the only
   // way to learn the default branch on a public repo.
-  const priv = isPrivateRepo();
-  const optIn = privateFreshEnabled();
   const snapByName = new Map(snapshot.map((head) => [head.name, head.oid]));
+  const toBranches = (names, oidOf) =>
+    names.map((name) => ({ name, oid: oidOf(name), snapOid: snapByName.get(name) }));
   let branches = snapshot.map((head) => ({ name: head.name, oid: head.oid, snapOid: head.oid }));
   let defaultBranch = pageDefaultBranch();
   let tags = [];
   let live = false;
 
   if (!priv) {
-    try {
-      const refs = await lsRefs(owner, repo);
+    const refs = await refsPending;
+    if (refs) {
       if (refs.heads.length > 0) {
-        branches = refs.heads.map((head) => ({
-          name: head.name,
-          oid: head.oid,
-          snapOid: snapByName.get(head.name),
-        }));
+        const liveOids = new Map(refs.heads.map((head) => [head.name, head.oid]));
+        branches = toBranches([...liveOids.keys()], (name) => liveOids.get(name));
         tags = refs.tags;
         if (refs.head) defaultBranch = refs.head;
         live = true;
       }
-    } catch {
-      // anonymous git refused (GHES, offline); the snapshot list still works
     }
+    // A null result means anonymous git refused (GHES, offline); the
+    // snapshot head list still works.
   } else if (optIn) {
     // webFreshen resolves every head live on its own, so the opt-in alone
     // makes the data fresh; the branch list is only there to offer branches
     // the snapshot never saw.
     live = true;
-    try {
-      const listed = await webBranches(owner, repo);
-      if (listed.names.length > 0) {
-        branches = listed.names.map((name) => ({
-          name,
-          oid: snapByName.get(name),
-          snapOid: snapByName.get(name),
-        }));
-        if (!defaultBranch) defaultBranch = listed.head;
-      }
-    } catch {
-      // endpoint changed or forbidden; the snapshot head list still works
+    const listed = await refsPending;
+    // A null result means the endpoint changed or is forbidden; the snapshot
+    // head list still works.
+    if (listed && listed.names.length > 0) {
+      branches = toBranches(listed.names, (name) => snapByName.get(name));
+      if (!defaultBranch) defaultBranch = listed.head;
     }
   }
 
@@ -438,9 +444,6 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
     defaultBranch,
     (oid) => !!oid && byOid.has(oid),
   );
-  let fresh = false;
-  let truncated = [];
-
   async function materialise() {
     if (!live) return { fresh: false, truncated: [] };
     const chosen = branches.filter((branch) => selected.has(branch.name));
@@ -453,11 +456,8 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
     }
   }
 
-  ({ fresh, truncated } = await materialise());
-  if (priv && live) {
-    // Tags are decoration: losing them must not revert a good freshen.
-    tags = await webTags(owner, repo).catch(() => []);
-  }
+  let { fresh, truncated } = await materialise();
+  if (tagsPending) tags = await tagsPending;
 
   const selectedBranches = () => branches.filter((b) => selected.has(b.name) && b.oid);
 
@@ -474,6 +474,10 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
 
     get heads() {
       return selectedBranches().map((branch) => ({ name: branch.name, oid: branch.oid }));
+    },
+    // Lane 0 is the default branch's, but only while it is actually drawn.
+    get pinnedOid() {
+      return selectedBranches().find((branch) => branch.name === defaultBranch)?.oid || '';
     },
     get branches() {
       return branches.map((branch) => ({

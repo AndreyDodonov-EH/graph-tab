@@ -61,6 +61,7 @@
 /* The GitHub-style framed box: muted toolbar (title + counts subtitle +
    actions), optional banners, the graph, and a muted pagination footer. */
 .ggt-shell {
+  position: relative;
   border: 1px solid var(--borderColor-default, #d1d9e0);
   border-radius: 6px;
   overflow: hidden;
@@ -463,10 +464,3 @@ a.ggt-author:hover {
 }
 
 
-
-/* Branch picker: everything it needs is injected from render.js (see
-   PICKER_CSS there) so it can never run against a stale manifest stylesheet;
-   the anchor wrapper is the one rule that belongs to the toolbar layout. */
-.ggt-picker {
-  position: relative;
-}
