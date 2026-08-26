@@ -56,12 +56,16 @@ Works on Chrome and Edge, Firefox is WiP.
   everything away and answer with an empty pack). A branch that reaches back
   further than the fetch is drawn as a stub with a dashed tail rather than
   hidden, the way `git log --graph --all` shows a shallow or unrelated
-  history. Choices are remembered per repository. The picker itself is
-  modelled on Primer's SelectPanel — the component GitHub's own branch
-  switcher is built from: a 32px anchor button with a git-branch Octicon and
-  a `selected/total` counter, a 320px overlay with a filter box, and rows
-  whose selection is a leading check rather than a checkbox. It copies the
-  proportions and the CSS variables, not GitHub's class names (those churn).
+  history. Choices are remembered per repository. The picker is GitHub's own
+  repository dropdown rebuilt (Primer's FilteredActionList): a 32px anchor
+  button with a git-branch Octicon and a `selected/total` counter, a 320px
+  overlay with a filter box, and `role="option"` rows carrying a checkbox and
+  a leading visual. It copies the proportions and the CSS variables, not
+  GitHub's class names (those churn). The overlay is fixed-positioned on
+  `document.body`: inside the graph shell it would be part of the toolbar's
+  layout and clipped by the shell's `overflow`. A pick applies immediately —
+  no Apply, no close button; the two rows at the top ("All branches",
+  "Only <default>") are the bulk actions.
 - **Ordering** (`src/order.js`): the network array's absolute position is a
   date axis, so commits spliced in from git or the commit pages are placed on
   it by their own date (`chronoIndex`) rather than stacked on top. Dates alone
@@ -72,7 +76,11 @@ Works on Chrome and Edge, Firefox is WiP.
 - **Layout** (`src/layout.js`): pure, DOM-free lane assignment following the
   classic `git log --graph` / vscode-git-graph model: lane reservation and
   release, merge edges that join already-open lanes, octopus merges, and
-  dashed tails for parents that live below the loaded window.
+  dashed tails for parents that live below the loaded window. Lane 0 is
+  reserved for the default branch and is never handed to anything else, so
+  the leftmost line always means the same thing — otherwise it goes to
+  whichever commit happens to be newest, which on a busy repository is any
+  random topic branch.
 - **Rendering** (`src/render.js`): one SVG behind fixed-height HTML rows,
   cubic-bezier lane transitions, a stable 12-color palette, and GitHub CSS
   variables for the chrome so light/dark themes both work.

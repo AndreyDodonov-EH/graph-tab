@@ -12,24 +12,43 @@
  *   children must appear before their parents (GitHub's network order,
  *   reversed, guarantees this). Parents outside the array are tolerated and
  *   produce dashed tail segments at the bottom of the graph.
+ * @param {{pinnedOid?: string}} [options] when `pinnedOid` is a commit in the
+ *   array, lane 0 is reserved for it and for everything its first parent
+ *   walks into, and no other branch may ever take that lane. The default
+ *   branch then always reads as the leftmost line, whatever order the rows
+ *   happen to arrive in — otherwise lane 0 simply goes to whichever commit
+ *   is newest, which on a busy repository is any random topic branch.
  * @returns {{
  *   nodes: Array<{row: number, x: number, color: number}>,   // per commit, same order
  *   segments: Array<{x1: number, y1: number, x2: number, y2: number, color: number, dashed?: boolean}>,
  *   laneCount: number
  * }} coordinates are in grid units: x in lanes, y in rows.
  */
-export function layout(commits) {
-  const lanes = []; // per lane: null or { sha, color, bornAtX?, lastSeg? }
+export function layout(commits, options = {}) {
+  const lanes = []; // per lane: null or { sha, color, bornAtX?, lastSeg?, reserved? }
   let joins = [];   // merge edges waiting for their next-row anchor: { fromX, sha }
   const nodes = [];
   const segments = [];
   let nextColor = 0;
   let laneCount = 0;
 
+  // Reserve lane 0 for the pinned branch. `reserved` suppresses the lane's
+  // edges until its commit is actually reached, so the rows above it do not
+  // grow a line that comes from nowhere; from then on it is an ordinary lane
+  // that happens to live at x = 0.
+  const pinned = options.pinnedOid && commits.some((c) => c.oid === options.pinnedOid);
+  if (pinned) {
+    lanes[0] = { sha: options.pinnedOid, color: nextColor++, reserved: true };
+    laneCount = 1;
+  }
+
   const findLane = (sha) => lanes.findIndex((lane) => lane !== null && lane.sha === sha);
   const freeLane = () => {
-    const k = lanes.indexOf(null);
-    return k === -1 ? lanes.length : k;
+    // Lane 0 stays the pinned branch's for the whole graph, even after its
+    // history ends, so the leftmost line never turns into something else.
+    const from = pinned ? 1 : 0;
+    const k = lanes.indexOf(null, from);
+    return k === -1 ? Math.max(lanes.length, from) : k;
   };
 
   for (let row = 0; row < commits.length; row++) {
@@ -53,7 +72,7 @@ export function layout(commits) {
       const y1 = row - 1;
       for (let k = 0; k < lanes.length; k++) {
         const lane = lanes[k];
-        if (!lane) continue;
+        if (!lane || lane.reserved) continue;
         const x1 = lane.bornAtX !== undefined ? lane.bornAtX : k;
         const x2 = lane.sha === commit.oid ? x : k;
         delete lane.bornAtX;
@@ -100,7 +119,8 @@ export function layout(commits) {
     }
 
     laneCount = Math.max(laneCount, x + 1, lanes.length);
-    while (lanes.length > 0 && lanes[lanes.length - 1] === null) lanes.pop();
+    const keep = pinned ? 1 : 0;
+    while (lanes.length > keep && lanes[lanes.length - 1] === null) lanes.pop();
   }
 
   // Parents that never arrived (outside the fetched window): dashed tails so
@@ -109,7 +129,7 @@ export function layout(commits) {
   const y2 = commits.length - 0.5;
   for (let k = 0; k < lanes.length; k++) {
     const lane = lanes[k];
-    if (!lane) continue;
+    if (!lane || lane.reserved) continue;
     const x1 = lane.bornAtX !== undefined ? lane.bornAtX : k;
     segments.push({ x1, y1, x2: k, y2, color: lane.color, dashed: true });
   }

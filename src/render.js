@@ -125,25 +125,52 @@ function buildShell(subtitle) {
 
 // The branch picker: which branches the graph draws.
 //
-// Not every branch is worth a lane, and the ones outside GitHub's snapshot
-// window cost a request to pull in, so the set is the user's call. The panel
-// is modelled on Primer's SelectPanel — the same component GitHub's own
-// branch switcher is built from: a 32px anchor button with a leading
-// git-branch Octicon and a counter, a 320px overlay with a filter box, and a
-// list whose selected rows carry a leading check rather than a checkbox.
-// Nothing here reuses GitHub's class names (they churn); the sizes and the
-// CSS variables are what make it sit in the page as if it belonged.
+// Copied in behaviour from GitHub's own repository dropdown (Primer's
+// FilteredActionList): an anchor button, a filter box, and a list of
+// role="option" rows whose selection lives in a leading slot. Two things
+// matter beyond the looks:
 //
-// Ticks are applied on "Apply", not per click, so ticking three branches is
-// one fetch and not three.
+//   - The list is an overlay on document.body, positioned against the
+//     button, not a child of the toolbar. Inside the graph shell it would be
+//     part of the layout (and clipped by the shell's overflow); on the body
+//     it floats over the page like GitHub's own menus do.
+//   - A click applies straight away. There is no Apply, no bulk-clear and no
+//     close button: the two rows at the top are the bulk actions, and
+//     clicking outside or pressing Escape closes the menu.
+//
+// Applying re-renders the whole view, which rebuilds this control, so the
+// open state and the filter text live at module scope and are restored.
+
+const PANEL_WIDTH = 320;
+let panelOpen = false;
+let panelFilter = '';
+let livePanel = null;
+// Listeners the open overlay puts on document/window. Applying a pick
+// re-renders the view and builds a fresh control, so the previous one has to
+// hand these back — a stale outside-click handler whose panel is already
+// detached sees every click as "outside" and shuts the new menu.
+let detachPanel = null;
+
+/** Drop the overlay — the view is going away and it lives on document.body. */
+export function closeBranchPicker() {
+  detachPanel?.();
+  detachPanel = null;
+  livePanel?.remove();
+  livePanel = null;
+  panelOpen = false;
+  panelFilter = '';
+}
+
 function buildBranchPicker(model) {
   const { branches, selected, defaultBranch, onSelectBranches, canFetch } = model;
-  const box = el('div', 'ggt-picker');
+  detachPanel?.();
+  detachPanel = null;
+  livePanel?.remove();
 
-  const counter = el('span', 'ggt-counter');
+  const counter = el('span', 'ggt-counter', `${selected.size}/${branches.length}`);
   const button = el('button', 'ggt-btn ggt-select-btn');
   button.type = 'button';
-  button.setAttribute('aria-haspopup', 'true');
+  button.setAttribute('aria-haspopup', 'listbox');
   button.setAttribute('aria-expanded', 'false');
   button.title = 'Choose which branches the graph draws';
   button.append(
@@ -155,17 +182,7 @@ function buildBranchPicker(model) {
 
   const panel = el('div', 'ggt-panel');
   panel.hidden = true;
-  panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', 'Select branches');
-
-  const head = el('div', 'ggt-panel-head');
-  head.append(el('span', 'ggt-panel-title', 'Select branches'));
-  const close = el('button', 'ggt-icon-btn');
-  close.type = 'button';
-  close.setAttribute('aria-label', 'Close');
-  close.appendChild(octicon('x'));
-  head.appendChild(close);
-  panel.appendChild(head);
+  livePanel = panel;
 
   const filterBox = el('div', 'ggt-filter');
   filterBox.appendChild(octicon('search', 'ggt-filter-icon'));
@@ -173,16 +190,75 @@ function buildBranchPicker(model) {
   filter.type = 'text';
   filter.placeholder = 'Find a branch...';
   filter.setAttribute('aria-label', 'Filter branches');
+  filter.value = panelFilter;
   filterBox.appendChild(filter);
   panel.appendChild(filterBox);
 
   const list = el('ul', 'ggt-list');
-  list.setAttribute('role', 'menu');
-  const empty = el('li', 'ggt-list-empty', 'No branches match.');
-  empty.hidden = true;
+  list.setAttribute('role', 'listbox');
+  list.setAttribute('aria-multiselectable', 'true');
+  list.setAttribute('aria-label', 'Branches');
+  panel.appendChild(list);
 
-  // Pending ticks live on the rows until Apply; the default branch first,
-  // then the ones already drawn, then the rest — the order people look in.
+  let busy = false;
+  async function apply(names, row) {
+    if (busy) return;
+    busy = true;
+    panel.setAttribute('aria-busy', 'true');
+    row?.classList.add('ggt-item-busy');
+    await onSelectBranches(names);
+    // The re-render replaces this control; nothing to restore here.
+  }
+
+  // One row, shaped like Primer's ActionList item: selection slot, leading
+  // visual, label, optional trailing state.
+  function addRow({ label, on, icon, tag, tagClass, tagTitle, disabled, onPick }) {
+    const item = el('li', 'ggt-item' + (on ? ' ggt-item-on' : ''));
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', String(on));
+    item.tabIndex = -1;
+    const check = el('span', 'ggt-check');
+    check.appendChild(octicon('check'));
+    item.append(check, octicon(icon, 'ggt-item-icon'), el('span', 'ggt-item-name', label));
+    if (tag) {
+      const pill = el('span', 'ggt-item-tag' + (tagClass ? ' ' + tagClass : ''), tag);
+      if (tagTitle) pill.title = tagTitle;
+      item.appendChild(pill);
+    }
+    if (disabled) item.setAttribute('aria-disabled', 'true');
+    else {
+      item.addEventListener('click', () => onPick(item));
+      item.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onPick(item);
+        }
+      });
+    }
+    list.appendChild(item);
+    return item;
+  }
+
+  // Bulk actions first, as two ordinary rows — that is what replaces the old
+  // footer buttons.
+  const names = branches.map((branch) => branch.name);
+  const pickable = branches.filter((branch) => branch.loaded || canFetch).map((b) => b.name);
+  addRow({
+    label: 'All branches',
+    on: selected.size === branches.length,
+    icon: 'git-branch',
+    onPick: (row) => apply(pickable, row),
+  });
+  if (defaultBranch && names.includes(defaultBranch)) {
+    addRow({
+      label: `Only ${defaultBranch}`,
+      on: selected.size === 1 && selected.has(defaultBranch),
+      icon: 'git-branch',
+      onPick: (row) => apply([defaultBranch], row),
+    });
+  }
+  list.appendChild(el('li', 'ggt-divider'));
+
   const rows = [];
   const ordered = [...branches].sort((a, b) => {
     const rank = (branch) =>
@@ -190,86 +266,43 @@ function buildBranchPicker(model) {
     return rank(a) - rank(b) || a.name.localeCompare(b.name);
   });
   for (const branch of ordered) {
-    const item = el('li', 'ggt-item');
-    item.setAttribute('role', 'menuitemcheckbox');
-    item.tabIndex = -1;
-    // Nothing can pull this branch in without a live ref source: a private
-    // repository rejects anonymous git, so it needs the freshness opt-in.
+    // Nothing can pull an unloaded branch in without a live ref source: a
+    // private repository rejects anonymous git and needs the freshness opt-in.
     const locked = !branch.loaded && !canFetch;
-    item.append(
-      octicon('check', 'ggt-item-check'),
-      el('span', 'ggt-item-name', branch.name),
-    );
-    if (branch.name === defaultBranch) {
-      item.appendChild(el('span', 'ggt-item-tag', 'default'));
-    } else if (!branch.loaded) {
-      const hint = el('span', 'ggt-item-tag ggt-item-fetch', canFetch ? 'fetch' : 'unavailable');
-      hint.title = canFetch
-        ? 'Outside the loaded window — ticking this pulls the branch in.'
-        : 'Outside the loaded window. Tick "fetch fresh commits" to make it available.';
-      item.appendChild(hint);
-    }
-    const row = { name: branch.name, item, locked, checked: selected.has(branch.name) };
-    if (locked) item.setAttribute('aria-disabled', 'true');
-    rows.push(row);
-    list.appendChild(item);
-  }
-  list.appendChild(empty);
-  panel.appendChild(list);
-
-  const foot = el('div', 'ggt-panel-foot');
-  const toggleAll = el('button', 'ggt-link');
-  toggleAll.type = 'button';
-  const apply = el('button', 'ggt-btn ggt-btn-primary', 'Apply');
-  apply.type = 'button';
-  foot.append(toggleAll, apply);
-  panel.appendChild(foot);
-
-  const selectable = () => rows.filter((row) => !row.locked);
-  const pending = () => rows.filter((row) => row.checked);
-
-  function paint() {
-    for (const row of rows) {
-      row.item.setAttribute('aria-checked', String(row.checked));
-      row.item.classList.toggle('ggt-item-on', row.checked);
-    }
-    const allOn = selectable().every((row) => row.checked);
-    toggleAll.textContent = allOn ? 'Deselect all' : 'Select all';
-    // Applying an empty set would just fall back to the automatic default,
-    // which is not what an empty list looks like it means.
-    apply.disabled = pending().length === 0;
-    counter.textContent = `${pending().length}/${rows.length}`;
-  }
-
-  const toggle = (row) => {
-    if (row.locked) return;
-    row.checked = !row.checked;
-    paint();
-  };
-  for (const row of rows) {
-    row.item.addEventListener('click', () => toggle(row));
-    row.item.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        toggle(row);
-      }
+    const on = selected.has(branch.name);
+    const only = on && selected.size === 1;
+    const item = addRow({
+      label: branch.name,
+      on,
+      icon: 'git-branch',
+      tag: branch.name === defaultBranch ? 'default' : branch.loaded ? '' : canFetch ? 'fetch' : 'unavailable',
+      tagClass: branch.name === defaultBranch ? '' : 'ggt-item-fetch',
+      tagTitle: branch.loaded
+        ? ''
+        : canFetch
+          ? 'Outside the loaded window — picking this pulls the branch in.'
+          : 'Outside the loaded window. Tick "fetch fresh commits" to make it available.',
+      disabled: locked,
+      onPick: (row) => {
+        // A graph of no branches is not a state worth reaching by accident.
+        if (only) return;
+        const next = on
+          ? [...selected].filter((name) => name !== branch.name)
+          : [...selected, branch.name];
+        apply(next, row);
+      },
     });
+    if (only) item.title = 'At least one branch has to be shown.';
+    rows.push({ name: branch.name, item });
   }
 
-  toggleAll.addEventListener('click', () => {
-    const on = !selectable().every((row) => row.checked);
-    for (const row of selectable()) row.checked = on;
-    paint();
-  });
+  const empty = el('li', 'ggt-list-empty', 'No branches match.');
+  empty.hidden = true;
+  list.appendChild(empty);
 
-  apply.addEventListener('click', async () => {
-    apply.disabled = true;
-    apply.textContent = 'Loading…';
-    await onSelectBranches(pending().map((row) => row.name));
-  });
-
-  filter.addEventListener('input', () => {
-    const needle = filter.value.trim().toLowerCase();
+  function runFilter() {
+    panelFilter = filter.value;
+    const needle = panelFilter.trim().toLowerCase();
     let shown = 0;
     for (const row of rows) {
       const hit = !needle || row.name.toLowerCase().includes(needle);
@@ -277,43 +310,75 @@ function buildBranchPicker(model) {
       if (hit) shown++;
     }
     empty.hidden = shown > 0;
-  });
+  }
+  filter.addEventListener('input', runFilter);
 
-  // Open / close, and arrow-key movement through the list, the way GitHub's
-  // own overlays behave.
-  const shut = () => {
-    panel.hidden = true;
-    button.setAttribute('aria-expanded', 'false');
-    document.removeEventListener('click', onDocClick, true);
-  };
+  // Anchored to the button, clamped to the viewport, kept in place while the
+  // page scrolls under it.
+  function place() {
+    const box = button.getBoundingClientRect();
+    const left = Math.max(8, Math.min(box.right - PANEL_WIDTH, innerWidth - PANEL_WIDTH - 8));
+    panel.style.left = `${left}px`;
+    panel.style.top = `${box.bottom + 4}px`;
+    panel.style.maxHeight = `${Math.max(180, innerHeight - box.bottom - 24)}px`;
+  }
+
   const onDocClick = (event) => {
-    if (!box.contains(event.target)) shut();
+    if (!panel.contains(event.target) && !button.contains(event.target)) close();
   };
-  const open = () => {
-    panel.hidden = false;
-    button.setAttribute('aria-expanded', 'true');
-    document.addEventListener('click', onDocClick, true);
-    filter.focus();
-  };
-  button.addEventListener('click', () => (panel.hidden ? open() : shut()));
-  close.addEventListener('click', shut);
-  panel.addEventListener('keydown', (event) => {
+  // Escape has to be watched on the document, not on the panel: picking a
+  // row applies straight away and focus is usually back on the page by then.
+  const onKey = (event) => {
     if (event.key === 'Escape') {
-      shut();
+      close();
       button.focus();
-      return;
     }
+  };
+  const detach = () => {
+    document.removeEventListener('click', onDocClick, true);
+    document.removeEventListener('keydown', onKey, true);
+    removeEventListener('scroll', place, true);
+    removeEventListener('resize', place);
+  };
+  function close() {
+    panel.hidden = true;
+    panelOpen = false;
+    button.setAttribute('aria-expanded', 'false');
+    detach();
+    detachPanel = null;
+  }
+  function open(focusFilter) {
+    panel.hidden = false;
+    panelOpen = true;
+    button.setAttribute('aria-expanded', 'true');
+    place();
+    document.addEventListener('click', onDocClick, true);
+    document.addEventListener('keydown', onKey, true);
+    addEventListener('scroll', place, true);
+    addEventListener('resize', place);
+    detachPanel = detach;
+    if (focusFilter) filter.focus();
+  }
+  button.addEventListener('click', () => (panel.hidden ? open(true) : close()));
+
+  panel.addEventListener('keydown', (event) => {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
     event.preventDefault();
-    const visible = rows.filter((row) => !row.item.hidden).map((row) => row.item);
+    const visible = [...list.querySelectorAll('.ggt-item')].filter((item) => !item.hidden);
     if (visible.length === 0) return;
     const at = visible.indexOf(document.activeElement);
     const step = event.key === 'ArrowDown' ? 1 : -1;
     visible[(at + step + visible.length) % visible.length].focus();
   });
 
-  paint();
-  box.append(button, panel);
+  document.body.appendChild(panel);
+  runFilter();
+  // Applying re-renders the view; reopen so the menu does not blink shut
+  // under the pointer after every pick.
+  if (panelOpen) open(false);
+
+  const box = el('div', 'ggt-picker');
+  box.appendChild(button);
   return box;
 }
 

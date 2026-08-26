@@ -7,7 +7,7 @@
 import { ensureTab, markTabSelected, markTabDeselected, repoNav, TAB_ID } from './tab.js';
 import { openRepoGraph, privateFreshEnabled, setPrivateFreshEnabled } from './data.js';
 import { layout } from './layout.js';
-import { render, renderStatus } from './render.js';
+import { render, renderStatus, closeBranchPicker } from './render.js';
 import { maybeWelcome } from './welcome.js';
 
 const VIEW_ID = 'ggt-view';
@@ -42,6 +42,9 @@ function contentFrame() {
 }
 
 function closeGraphView() {
+  // The picker's menu lives on document.body, so it has to be taken down
+  // explicitly — removing the view would otherwise leave it floating.
+  closeBranchPicker();
   document.getElementById(VIEW_ID)?.remove();
   for (const element of hidden) {
     if (element.isConnected) element.style.removeProperty('display');
@@ -102,6 +105,10 @@ async function loadAndRender(view, repoRef) {
 
 function rerender(view) {
   const { commits, filtered } = source.view();
+  // Pin the default branch to the leftmost lane, so the outer line of the
+  // graph always means the same thing no matter which topic branch happens
+  // to carry the newest commit.
+  const pinnedOid = source.heads.find((head) => head.name === source.defaultBranch)?.oid;
   // Reloading via a fresh source re-fetches meta (new nethash) and re-runs
   // freshen(); used by both the Refresh button and the opt-in toggle.
   const reload = () => {
@@ -113,7 +120,7 @@ function rerender(view) {
     owner: source.owner,
     repo: source.repo,
     commits,
-    graph: layout(commits),
+    graph: layout(commits, { pinnedOid }),
     heads: source.heads,
     branches: source.branches,
     selected: source.selected,

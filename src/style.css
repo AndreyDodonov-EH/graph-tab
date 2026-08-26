@@ -463,11 +463,13 @@ a.ggt-author:hover {
 }
 
 
-/* Branch picker — Primer SelectPanel proportions, so it reads as one of
-   GitHub's own controls: a 32px anchor button (6px radius, 8px gap, 14px
-   label) and a 320px overlay (12px radius, the three-layer Primer shadow,
-   32px rows with a leading check instead of a checkbox). Every colour is a
-   GitHub CSS variable, so both themes follow the page. */
+
+/* Branch picker — GitHub's repository dropdown, rebuilt: a Primer anchor
+   button plus a FilteredActionList overlay. The overlay is fixed-positioned
+   on document.body (the graph shell clips its own overflow, and an in-flow
+   menu would be part of the toolbar's layout), so it floats over the page
+   the way GitHub's own menus do. Colours are GitHub CSS variables, so both
+   themes follow the page. */
 .ggt-picker {
   position: relative;
 }
@@ -495,14 +497,12 @@ a.ggt-author:hover {
 }
 
 .ggt-panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 30;
+  position: fixed;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   width: 320px;
-  max-height: 452px;
+  padding-top: 8px;
   font-size: 14px;
   color: var(--fgColor-default, #1f2328);
   background: var(--overlay-bgColor, var(--bgColor-default, #ffffff));
@@ -512,38 +512,15 @@ a.ggt-author:hover {
     rgba(37, 41, 46, 0.04) 0 6px 12px -3px,
     rgba(37, 41, 46, 0.12) 0 6px 18px 0;
 }
-.ggt-panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 8px 12px 16px;
-}
-.ggt-panel-title {
-  font-size: 14px;
-  font-weight: 600;
-}
-.ggt-icon-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  color: var(--fgColor-muted, #59636e);
-  background: none;
-  border: 0;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.ggt-icon-btn:hover {
-  background: var(--control-transparent-bgColor-hover, rgba(129, 139, 152, 0.12));
+.ggt-panel[aria-busy='true'] {
+  pointer-events: none;
 }
 
 .ggt-filter {
   position: relative;
   display: flex;
   align-items: center;
-  margin: 0 16px 8px;
+  margin: 0 8px 8px;
 }
 .ggt-filter-icon {
   position: absolute;
@@ -579,6 +556,11 @@ a.ggt-author:hover {
   overflow-y: auto;
   list-style: none;
 }
+.ggt-divider {
+  height: 1px;
+  margin: 8px 0;
+  background: var(--borderColor-muted, #d1d9e0);
+}
 .ggt-item {
   display: flex;
   align-items: center;
@@ -597,15 +579,35 @@ a.ggt-author:hover {
   cursor: default;
   opacity: 0.55;
 }
-/* The check keeps its 16px column whether or not the row is selected, so the
-   labels stay on one axis — Primer's ActionList does the same. */
-.ggt-item-check {
+/* Primer's multi-select control: a 16px box that fills in when picked, the
+   same one the "fetch fresh commits" checkbox next to the button shows. */
+.ggt-check {
+  display: flex;
   flex: none;
-  visibility: hidden;
-  color: var(--fgColor-default, #1f2328);
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: var(--bgColor-default, #ffffff);
+  border: 1px solid var(--control-borderColor-emphasis, #818b98);
+  border-radius: 4px;
 }
-.ggt-item-on .ggt-item-check {
+.ggt-check svg {
+  width: 12px;
+  height: 12px;
+  color: var(--fgColor-onEmphasis, #ffffff);
+  visibility: hidden;
+}
+.ggt-item-on .ggt-check {
+  background: var(--control-checked-bgColor-rest, #0969da);
+  border-color: var(--control-checked-bgColor-rest, #0969da);
+}
+.ggt-item-on .ggt-check svg {
   visibility: visible;
+}
+.ggt-item-icon {
+  flex: none;
+  color: var(--fgColor-muted, #59636e);
 }
 .ggt-item-name {
   flex: 1;
@@ -626,42 +628,25 @@ a.ggt-author:hover {
   color: var(--fgColor-attention, #9a6700);
   border-color: var(--borderColor-attention-muted, rgba(212, 167, 44, 0.4));
 }
+/* The pick is applied straight away, so the row that is loading says so. */
+.ggt-item-busy .ggt-check {
+  border-color: var(--fgColor-muted, #59636e);
+  background: none;
+  animation: ggt-pulse 1s ease-in-out infinite;
+}
+.ggt-item-busy .ggt-check svg {
+  visibility: hidden;
+}
+@keyframes ggt-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
 .ggt-list-empty {
   padding: 12px 8px;
   color: var(--fgColor-muted, #59636e);
 }
-
-.ggt-panel-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--borderColor-muted, #d1d9e0);
-}
-.ggt-btn-primary {
-  color: var(--button-primary-fgColor-rest, #ffffff);
-  background: var(--button-primary-bgColor-rest, #1f883d);
-  border-color: var(--button-primary-borderColor-rest, rgba(31, 35, 40, 0.15));
-}
-.ggt-btn-primary:hover:enabled {
-  background: var(--button-primary-bgColor-hover, #1c8139);
-}
-.ggt-link {
-  padding: 0;
-  font: inherit;
-  font-size: 14px;
-  color: var(--fgColor-accent, #0969da);
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-.ggt-link:hover {
-  text-decoration: underline;
-}
-.ggt-select-btn:focus-visible,
-.ggt-icon-btn:focus-visible,
-.ggt-link:focus-visible {
+.ggt-select-btn:focus-visible {
   outline: 2px solid var(--focus-outlineColor, #0969da);
   outline-offset: -2px;
 }
