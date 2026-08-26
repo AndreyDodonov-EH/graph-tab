@@ -56,19 +56,25 @@ Works on Chrome and Edge, Firefox is WiP.
   everything away and answer with an empty pack). A branch that reaches back
   further than the fetch is drawn as a stub with a dashed tail rather than
   hidden, the way `git log --graph --all` shows a shallow or unrelated
-  history. Choices are remembered per repository. The picker *is* GitHub's
-  own repository dropdown: the markup carries the Primer React class names
-  (`prc-Overlay`, the TextInput wrapper, `prc-ActionList` with its selection
-  slot, `prc-Label`), so GitHub's stylesheet — loaded on every repo page —
-  styles it and it tracks GitHub's look. Those hashed names churn with Primer
-  releases, and the manifest-injected `style.css` only refreshes when the
-  extension is reloaded while the modules refresh on every page load, so the
-  geometry the menu cannot do without (position, list reset, row layout, the
-  check) is a small stylesheet injected from `render.js` itself. The overlay
-  is fixed-positioned on `document.body`: inside the graph shell it would be
-  part of the toolbar's layout and clipped by the shell's `overflow`. A pick
-  applies immediately — no Apply, no close button; the two rows at the top
-  ("All branches", "Only <default>") are the bulk actions.
+  history. Choices are remembered per repository. The picker is GitHub's
+  SelectPanel — the control behind its repository and branch dropdowns —
+  rebuilt to its measured metrics: a 320px/12px-radius overlay, a header at
+  `8px 8px 0` with a 14px/21px 600 title, a 304x32 muted filter input at 8px
+  margin, and a list at `8px 0` whose 32px rows sit at `0 8px` with their
+  content at `6px 8px` behind a 16px selection slot and a 16px leading
+  visual. Those numbers are hard-coded rather than borrowed through Primer's
+  class names because GitHub code-splits its CSS: on a plain repository page
+  none of the `prc-ActionList-*` / `prc-SelectPanel-*` rules are loaded until
+  GitHub's own picker mounts, so borrowing them looked right only by luck.
+  The stylesheet is injected from `render.js`, not `style.css`, because the
+  manifest only refreshes that one when the extension is reloaded while the
+  modules refresh on every page load. The overlay is fixed-positioned on
+  `document.body`: inside the graph shell it would be part of the toolbar's
+  layout and clipped by the shell's `overflow`. A pick applies immediately —
+  no Apply, no close button; the two rows at the top ("All branches",
+  "Only <default>") are the bulk actions. While the pick is in flight the
+  button spins, a progress bar rides the top of the frame and the rows dim,
+  and the rebuilt graph fades up out of that dim instead of cutting.
 - **Ordering** (`src/order.js`): the network array's absolute position is a
   date axis, so commits spliced in from git or the commit pages are placed on
   it by their own date (`chronoIndex`) rather than stacked on top. Dates alone

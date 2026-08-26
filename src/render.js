@@ -125,27 +125,35 @@ function buildShell(subtitle) {
 
 // The branch picker: which branches the graph draws.
 //
-// This is GitHub's own repository dropdown, reused rather than imitated: the
-// markup below carries the Primer React class names (prc-Overlay, the
-// TextInput wrapper, prc-ActionList with its selection slot, prc-Label) so
-// GitHub's stylesheet — already loaded on every repo page — styles it, and it
-// tracks GitHub's look automatically. Two things matter beyond the looks:
+// Structure and metrics are GitHub's SelectPanel — the control behind its
+// repository and branch dropdowns — measured off the live component rather
+// than guessed: a 320px/12px-radius overlay holding a header (8px 8px 0, a
+// 14px/21px 600 title), a filter row (a 304x32 muted input with 8px margin
+// and 6px radius), and a list (8px 0 padding, rows 32px tall at 0 8px with a
+// 6px radius, whose content sits at 6px 8px behind a 16px selection slot and
+// a 16px leading visual, each with 8px to its right).
+//
+// Those numbers are hard-coded here rather than borrowed through Primer's
+// class names, because GitHub code-splits its CSS: on a plain repository page
+// none of the `prc-ActionList-*` / `prc-SelectPanel-*` rules are loaded at
+// all (checked — every one of them missing until GitHub's own picker mounts).
+// Carrying the class names looked right only when the chunk happened to be
+// there, and would fight our own rules when it was. The `data-component`
+// attributes are kept: they carry no styling, and they say what each part is.
+//
+// Two behaviours matter beyond the looks:
 //
 //   - The overlay is fixed-positioned on document.body, anchored to the
 //     button. Inside the graph shell it would be part of the toolbar's layout
-//     and clipped by the shell's overflow; on the body it floats like
-//     GitHub's own menus.
+//     and clipped by the shell's overflow.
 //   - A click applies straight away. No Apply and no close button: the two
 //     rows at the top are the bulk actions, and an outside click or Escape
 //     closes the menu.
 //
-// Primer's hashed class names change with its releases, and the extension's
-// manifest-injected stylesheet only refreshes when the extension itself is
-// reloaded (the modules refresh on every page load). So the geometry the
-// dropdown cannot do without — position, list reset, row layout, the
-// selection check — is carried as a small stylesheet injected right here,
-// from JS, which can never be stale. It is written so that when Primer's
-// classes do match, Primer wins on the details (hover, dividers, colours).
+// The stylesheet is injected from here rather than shipped in style.css: the
+// manifest injects that one and only refreshes it when the extension is
+// reloaded, while these modules are re-read on every page load, so after an
+// update the JS would otherwise run against last version's CSS.
 //
 // Applying re-renders the whole view, which rebuilds this control, so the
 // open state and the filter text live at module scope and are restored.
@@ -159,80 +167,104 @@ let livePanel = null;
 // shuts the new menu, so the previous instance has to hand these back.
 let detachPanel = null;
 
-// Primer React's class names, verbatim from github.com. If GitHub renames
-// one, that element falls back to the ggt-* rules below — the layout holds,
-// only the finer Primer polish is lost until the name is updated here.
-const PRC = {
-  overlay: 'prc-Overlay-Overlay-jfs-T',
-  heading: 'prc-Heading-Heading-MtWFE',
-  inputWrap: 'TextInput-wrapper prc-components-TextInputWrapper-Hpdqi prc-components-TextInputBaseWrapper-wY-n0',
-  input: 'prc-components-Input-IwWrt',
-  list: 'prc-ActionList-ActionList-rPFF2',
-  item: 'prc-ActionList-ActionListItem-So4vC',
-  content: 'prc-ActionList-ActionListContent-KBb8-',
-  spacer: 'prc-ActionList-Spacer-4tR2m',
-  selection: 'prc-ActionList-LeadingAction-hbWbh prc-ActionList-VisualWrap-bdCsS',
-  checkmark: 'prc-ActionList-SingleSelectCheckmark-zMd8d',
-  leading: 'prc-ActionList-LeadingVisual-NBr28 prc-ActionList-VisualWrap-bdCsS',
-  sub: 'prc-ActionList-ActionListSubContent-gKsFp',
-  label: 'prc-ActionList-ItemLabel-81ohH',
-  pill: 'prc-Label-Label-qG-Zu',
-  button: 'prc-Button-ButtonBase-9n-Xk',
-  buttonContent: 'prc-Button-ButtonContent-Iohp5',
-  buttonVisual: 'prc-Button-Visual-YNt2F prc-Button-VisualWrap-E4cnq',
-  buttonLabel: 'prc-Button-Label-FWkx3',
-};
-
-const PICKER_STYLE_ID = 'ggt-picker-style';
-const PICKER_CSS = `
-.ggt-panel { position: fixed; z-index: 1000; width: ${PANEL_WIDTH}px; display: flex; flex-direction: column;
-  font-size: 14px; color: var(--fgColor-default, #1f2328);
+const UI_STYLE_ID = 'ggt-ui-style';
+const UI_CSS = `
+.ggt-panel { position: fixed; z-index: 1000; display: flex; flex-direction: column; width: ${PANEL_WIDTH}px;
+  font-size: 14px; line-height: 21px; color: var(--fgColor-default, #1f2328);
   background: var(--overlay-bgColor, var(--bgColor-default, #fff)); border-radius: 12px;
   box-shadow: var(--borderColor-default, rgba(209,217,224,.25)) 0 0 0 1px, rgba(37,41,46,.04) 0 6px 12px -3px, rgba(37,41,46,.12) 0 6px 18px 0; }
 .ggt-panel[hidden] { display: none; }
-.ggt-panel:not([hidden]) { opacity: 1; visibility: visible; }
 .ggt-panel[aria-busy="true"] { pointer-events: none; }
-.ggt-panel-head { display: flex; align-items: center; min-height: 40px; padding: 8px 16px 4px; }
-.ggt-panel-head h2 { margin: 0; font-size: 14px; font-weight: 600; line-height: 20px; }
-.ggt-panel-filter { padding: 4px 16px 8px; }
-.ggt-panel-filter > span { display: inline-flex; align-items: center; width: 100%; min-height: 32px; padding: 0 12px; gap: 8px;
-  background: var(--bgColor-default, #fff); border: 1px solid var(--control-borderColor-rest, #d1d9e0); border-radius: 6px; box-sizing: border-box; }
-.ggt-panel-filter > span:focus-within { border-color: var(--focus-outlineColor, #0969da); box-shadow: inset 0 0 0 1px var(--focus-outlineColor, #0969da); }
-.ggt-panel-filter svg { color: var(--fgColor-muted, #59636e); flex: none; }
-.ggt-panel-filter input { flex: 1; min-width: 0; padding: 0; font: inherit; font-size: 14px; color: inherit; background: none; border: 0; outline: none; }
-.ggt-panel ul { flex: 1; min-height: 0; margin: 0; padding: 8px; overflow-y: auto; list-style: none; }
-.ggt-panel li[role="option"] { position: relative; display: block; list-style: none; border-radius: 6px; cursor: pointer; }
-.ggt-panel li[role="option"] > div { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 6px 8px; box-sizing: border-box; }
-.ggt-panel li[role="option"]:hover, .ggt-panel li[role="option"]:focus-visible { background: var(--control-transparent-bgColor-hover, rgba(129,139,152,.12)); outline: none; }
-.ggt-panel li[aria-disabled="true"] { cursor: default; opacity: .55; }
-.ggt-panel li[role="option"] [data-component="ActionList.Selection"] { display: flex; flex: none; width: 16px; }
-.ggt-panel li[aria-selected="false"] [data-component="ActionList.Selection"] svg { visibility: hidden; }
-.ggt-panel li[role="option"] [data-component="ActionList.LeadingVisual"] { display: flex; flex: none; color: var(--fgColor-muted, #59636e); }
-.ggt-panel li[role="option"] [data-component="ActionList.Item.Label"] { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ggt-panel li[role="option"] + li[role="option"] > div::before { content: ""; position: absolute; top: -1px; left: 40px; right: 8px; border-top: 1px solid var(--borderColor-muted, #d1d9e0); }
-.ggt-panel li[role="separator"] { height: 1px; margin: 8px -8px; background: var(--borderColor-muted, #d1d9e0); list-style: none; }
-.ggt-panel .ggt-pill { flex: none; padding: 0 7px; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--fgColor-muted, #59636e);
+
+.ggt-sp-head { display: flex; align-items: center; padding: 8px 8px 0; }
+.ggt-sp-title { margin: 0; font-size: 14px; line-height: 21px; font-weight: 600; }
+
+.ggt-input { display: flex; align-items: center; height: 32px; margin: 8px; padding: 0 0 0 8px;
+  background: var(--bgColor-muted, #f6f8fa); border: 1px solid var(--control-borderColor-rest, #d1d9e0);
+  border-radius: 6px; box-sizing: border-box; }
+.ggt-input:focus-within { border-color: var(--focus-outlineColor, #0969da); box-shadow: inset 0 0 0 1px var(--focus-outlineColor, #0969da); }
+.ggt-input svg { flex: none; margin-right: 8px; color: var(--fgColor-muted, #59636e); }
+.ggt-input input { flex: 1; min-width: 0; height: 30px; margin: 0 8px 0 0; padding: 1px 8px 1px 0;
+  font: inherit; font-size: 14px; line-height: 20px; color: inherit; background: none; border: 0; outline: none; }
+.ggt-input input::placeholder { color: var(--fgColor-muted, #59636e); }
+
+.ggt-list-box { flex: 1; min-height: 0; overflow-y: auto; }
+.ggt-list { margin: 0; padding: 8px 0; list-style: none; }
+.ggt-item { position: relative; margin: 0 8px; border-radius: 6px; list-style: none; cursor: pointer; }
+.ggt-item-content { display: flex; align-items: center; min-height: 32px; padding: 6px 8px; border-radius: 6px; box-sizing: border-box; }
+.ggt-item:hover, .ggt-item:focus-visible { background: var(--control-transparent-bgColor-hover, rgba(129,139,152,.15)); outline: none; }
+.ggt-item[aria-disabled="true"] { cursor: default; opacity: .55; }
+.ggt-sel, .ggt-vis { display: flex; flex: none; align-items: center; width: 16px; height: 20px; margin-right: 8px; }
+.ggt-vis { color: var(--fgColor-muted, #59636e); }
+.ggt-item[aria-selected="false"] .ggt-sel svg { visibility: hidden; }
+.ggt-sub { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; line-height: 20px; }
+.ggt-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* GitHub's data-dividers: a hairline above every row but the first, inset to
+   where the label starts. */
+.ggt-item + .ggt-item .ggt-sub::before { content: ""; position: absolute; left: 48px; right: 8px; top: -1px;
+  border-top: 1px solid var(--borderColor-muted, #d1d9e0); }
+.ggt-item[aria-selected="true"] .ggt-item-content::after { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px;
+  width: 3px; background: var(--fgColor-accent, #0969da); border-radius: 3px; }
+.ggt-pill { flex: none; padding: 0 7px; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--fgColor-muted, #59636e);
   border: 1px solid var(--borderColor-default, #d1d9e0); border-radius: 2em; }
-.ggt-panel .ggt-pill-fetch { color: var(--fgColor-attention, #9a6700); border-color: var(--borderColor-attention-muted, rgba(212,167,44,.4)); }
-.ggt-panel li.ggt-item-busy [data-component="ActionList.Selection"] svg { visibility: visible; animation: ggt-pulse 1s ease-in-out infinite; }
-@keyframes ggt-pulse { 50% { opacity: .25; } }
-.ggt-panel .ggt-list-empty { padding: 12px 8px; color: var(--fgColor-muted, #59636e); list-style: none; }
-.ggt-select-btn { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font: inherit; font-size: 14px; font-weight: 500;
-  color: var(--button-default-fgColor-rest, #25292e); background: var(--button-default-bgColor-rest, #f6f8fa);
-  border: 1px solid var(--button-default-borderColor-rest, #d1d9e0); border-radius: 6px; cursor: pointer; }
+.ggt-pill-fetch { color: var(--fgColor-attention, #9a6700); border-color: var(--borderColor-attention-muted, rgba(212,167,44,.4)); }
+.ggt-list-empty { padding: 6px 16px 10px; color: var(--fgColor-muted, #59636e); list-style: none; }
+
+.ggt-select-btn { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; font: inherit; font-size: 14px;
+  font-weight: 500; color: var(--button-default-fgColor-rest, #25292e); background: var(--button-default-bgColor-rest, #f6f8fa);
+  border: 1px solid var(--button-default-borderColor-rest, #d1d9e0); border-radius: 6px; white-space: nowrap; cursor: pointer; }
 .ggt-select-btn:hover { background: var(--button-default-bgColor-hover, #eff2f5); }
-.ggt-select-btn > span { display: inline-flex; align-items: center; gap: 8px; }
-.ggt-select-btn svg { color: var(--fgColor-muted, #59636e); }
+.ggt-select-btn svg { flex: none; color: var(--fgColor-muted, #59636e); }
 .ggt-counter { padding: 0 6px; font-size: 12px; font-weight: 500; line-height: 18px; color: var(--fgColor-default, #1f2328);
   background: var(--bgColor-neutral-muted, rgba(129,139,152,.12)); border-radius: 2em; }
+.ggt-select-btn:focus-visible { outline: 2px solid var(--focus-outlineColor, #0969da); outline-offset: -2px; }
+
+/* Picking a branch takes a round trip and then replaces the whole view.
+   Without this the graph sits there looking untouched and then blinks into a
+   different shape; with it the click reads as work in progress and the new
+   graph fades up out of the dim rather than cutting. */
+.ggt-shell { position: relative; }
+.ggt-shell.ggt-busy .ggt-wrap, .ggt-shell.ggt-busy .ggt-footer { opacity: .5; transition: opacity .12s ease-out; }
+.ggt-busy-bar { position: absolute; left: 0; right: 0; top: 0; height: 2px; overflow: hidden; background: var(--bgColor-neutral-muted, rgba(129,139,152,.12)); }
+.ggt-busy-bar::after { content: ""; position: absolute; inset: 0; width: 40%; background: var(--fgColor-accent, #0969da);
+  border-radius: 2px; animation: ggt-slide 1.1s ease-in-out infinite; }
+@keyframes ggt-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+.ggt-spinner { display: inline-block; width: 16px; height: 16px; box-sizing: border-box; border: 2px solid currentColor;
+  border-top-color: transparent; border-radius: 50%; animation: ggt-spin .7s linear infinite; }
+@keyframes ggt-spin { to { transform: rotate(360deg); } }
+.ggt-fade-in { animation: ggt-fade .16s ease-out; }
+/* Picks up where the busy dim left off. Starting from 0 would blank the
+   frame for an instant, which is the flash this is meant to remove. */
+@keyframes ggt-fade { from { opacity: .5; } to { opacity: 1; } }
 `;
 
-function ensurePickerStyle() {
-  if (document.getElementById(PICKER_STYLE_ID)) return;
+function ensureUiStyle() {
+  if (document.getElementById(UI_STYLE_ID)) return;
   const style = el('style');
-  style.id = PICKER_STYLE_ID;
-  style.textContent = PICKER_CSS;
+  style.id = UI_STYLE_ID;
+  style.textContent = UI_CSS;
   document.head.appendChild(style);
+}
+
+/**
+ * Show that a pick is being fetched, without taking the graph away: the
+ * anchor button spins, a progress bar rides the top of the frame and the
+ * rows dim. render() replaces the whole subtree when the data lands, so the
+ * state does not have to be cleared.
+ */
+export function setViewBusy(container, on) {
+  ensureUiStyle();
+  const shell = container.querySelector('.ggt-shell');
+  if (!shell) return;
+  shell.classList.toggle('ggt-busy', on);
+  shell.querySelector(':scope > .ggt-busy-bar')?.remove();
+  if (on) shell.appendChild(el('div', 'ggt-busy-bar'));
+  const button = document.querySelector('.ggt-select-btn');
+  const visual = button?.querySelector('[data-component="leadingVisual"]');
+  if (!visual) return;
+  button.setAttribute('data-loading', String(on));
+  visual.textContent = '';
+  visual.appendChild(on ? el('span', 'ggt-spinner') : octicon('git-branch'));
 }
 
 /** Drop the overlay — the view is going away and it lives on document.body. */
@@ -247,78 +279,59 @@ export function closeBranchPicker() {
 
 function buildBranchPicker(model) {
   const { branches, selected, defaultBranch, onSelectBranches, canFetch } = model;
-  ensurePickerStyle();
+  ensureUiStyle();
   detachPanel?.();
   detachPanel = null;
   livePanel?.remove();
 
-  // Anchor: Primer's default medium Button, with its content slots.
   const counter = el('span', 'ggt-counter', `${selected.size}/${branches.length}`);
-  const button = el('button', `${PRC.button} ggt-select-btn`);
+  const button = el('button', 'ggt-select-btn');
   button.type = 'button';
   button.setAttribute('data-component', 'Button');
-  button.setAttribute('data-size', 'medium');
-  button.setAttribute('data-variant', 'default');
   button.setAttribute('aria-haspopup', 'listbox');
   button.setAttribute('aria-expanded', 'false');
   button.title = 'Choose which branches the graph draws';
-  const content = el('span', PRC.buttonContent);
-  content.setAttribute('data-component', 'buttonContent');
-  const leading = el('span', PRC.buttonVisual);
+  const leading = el('span', 'ggt-btn-visual');
   leading.setAttribute('data-component', 'leadingVisual');
   leading.appendChild(octicon('git-branch'));
-  const text = el('span', PRC.buttonLabel, 'Branches');
-  text.setAttribute('data-component', 'text');
-  const trailing = el('span', PRC.buttonVisual);
-  trailing.setAttribute('data-component', 'trailingVisual');
-  trailing.appendChild(octicon('triangle-down'));
-  content.append(leading, text, counter, trailing);
-  button.appendChild(content);
+  button.append(leading, el('span', null, 'Branches'), counter, octicon('triangle-down'));
 
-  // Overlay: Primer's Overlay, with the heading and TextInput of GitHub's
-  // own repository / branch pickers.
-  const panel = el('div', `${PRC.overlay} ggt-panel`);
+  const panel = el('div', 'ggt-panel');
   panel.hidden = true;
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'Select branches');
-  // Primer's Overlay starts transparent and its appear animation only runs
-  // once this flag is set — GitHub's own pickers carry it, so it has to be
-  // here too or the menu stays see-through.
-  panel.setAttribute('data-component', 'AnchoredOverlay');
-  panel.setAttribute('data-visibility-visible', '');
   livePanel = panel;
 
-  const head = el('div', 'ggt-panel-head');
-  const heading = el('h2', PRC.heading, 'Select branches');
-  heading.setAttribute('data-component', 'Heading');
-  head.appendChild(heading);
+  const head = el('div', 'ggt-sp-head');
+  head.setAttribute('data-component', 'SelectPanel.Header');
+  const title = el('h2', 'ggt-sp-title', 'Select branches');
+  title.setAttribute('data-component', 'SelectPanel.Title');
+  head.appendChild(title);
   panel.appendChild(head);
 
-  const filterBox = el('div', 'ggt-panel-filter');
-  const wrap = el('span', PRC.inputWrap);
-  wrap.setAttribute('data-component', 'TextInput');
-  wrap.setAttribute('data-leading-visual', 'true');
-  const icon = el('span', 'TextInput-icon');
-  icon.setAttribute('data-component', 'TextInput.LeadingVisual');
-  icon.setAttribute('aria-hidden', 'true');
-  icon.appendChild(octicon('search'));
-  const filter = el('input', PRC.input);
+  const inputWrap = el('span', 'ggt-input');
+  inputWrap.setAttribute('data-component', 'TextInput');
+  inputWrap.appendChild(octicon('search'));
+  const filter = el('input');
   filter.type = 'text';
   filter.placeholder = 'Find a branch...';
   filter.setAttribute('data-component', 'input');
   filter.setAttribute('aria-label', 'Filter branches');
   filter.value = panelFilter;
-  wrap.append(icon, filter);
-  filterBox.appendChild(wrap);
-  panel.appendChild(filterBox);
+  inputWrap.appendChild(filter);
+  const filterRow = el('div');
+  filterRow.setAttribute('data-component', 'FilteredActionList.Header');
+  filterRow.appendChild(inputWrap);
+  panel.appendChild(filterRow);
 
-  const list = el('ul', PRC.list);
+  const listBox = el('div', 'ggt-list-box');
+  const list = el('ul', 'ggt-list');
   list.setAttribute('data-component', 'ActionList');
-  list.setAttribute('data-variant', 'inset');
   list.setAttribute('role', 'listbox');
   list.setAttribute('aria-multiselectable', 'true');
   list.setAttribute('aria-label', 'Branches');
-  panel.appendChild(list);
+  listBox.appendChild(list);
+  panel.appendChild(listBox);
 
   let busy = false;
   async function apply(names, row) {
@@ -330,37 +343,33 @@ function buildBranchPicker(model) {
     // The re-render replaces this control; nothing to restore here.
   }
 
-  // One ActionList.Item: spacer, selection slot with the check, leading
-  // visual, label, optional trailing Label pill.
+  // One ActionList.Item: selection slot, leading visual, label, optional pill.
   function addRow({ label, on, tag, tagClass, tagTitle, disabled, onPick }) {
-    const item = el('li', PRC.item);
+    const item = el('li', 'ggt-item');
     item.setAttribute('data-component', 'ActionList.Item');
     item.setAttribute('role', 'option');
     item.setAttribute('aria-selected', String(on));
     item.tabIndex = -1;
-    const body = el('div', PRC.content);
-    body.setAttribute('data-size', 'medium');
-    const selection = el('span', PRC.selection);
+    const content = el('div', 'ggt-item-content');
+    const selection = el('span', 'ggt-sel');
     selection.setAttribute('data-component', 'ActionList.Selection');
-    selection.appendChild(octicon('check', PRC.checkmark));
-    const visual = el('span', PRC.leading);
+    selection.appendChild(octicon('check'));
+    const visual = el('span', 'ggt-vis');
     visual.setAttribute('data-component', 'ActionList.LeadingVisual');
     visual.appendChild(octicon('git-branch'));
-    const sub = el('span', PRC.sub);
+    const sub = el('span', 'ggt-sub');
     sub.setAttribute('data-component', 'ActionList.Item--DividerContainer');
-    const name = el('span', PRC.label, label);
+    const name = el('span', 'ggt-label', label);
     name.setAttribute('data-component', 'ActionList.Item.Label');
     sub.appendChild(name);
-    body.append(el('span', PRC.spacer), selection, visual, sub);
     if (tag) {
-      const pill = el('span', `${PRC.pill} ggt-pill${tagClass ? ' ' + tagClass : ''}`, tag);
+      const pill = el('span', `ggt-pill${tagClass ? ' ' + tagClass : ''}`, tag);
       pill.setAttribute('data-component', 'Label');
-      pill.setAttribute('data-size', 'small');
-      pill.setAttribute('data-variant', tagClass ? 'attention' : 'default');
       if (tagTitle) pill.title = tagTitle;
-      body.appendChild(pill);
+      sub.appendChild(pill);
     }
-    item.appendChild(body);
+    content.append(selection, visual, sub);
+    item.appendChild(content);
     if (disabled) item.setAttribute('aria-disabled', 'true');
     else {
       item.addEventListener('click', () => onPick(item));
@@ -390,9 +399,6 @@ function buildBranchPicker(model) {
       onPick: (row) => apply([defaultBranch], row),
     });
   }
-  const separator = el('li');
-  separator.setAttribute('role', 'separator');
-  list.appendChild(separator);
 
   const rows = [];
   const ordered = [...branches].sort((a, b) => {
@@ -430,9 +436,9 @@ function buildBranchPicker(model) {
     rows.push({ name: branch.name, item });
   }
 
-  const empty = el('li', 'ggt-list-empty', 'No branches match.');
+  const empty = el('div', 'ggt-list-empty', 'No branches match.');
   empty.hidden = true;
-  list.appendChild(empty);
+  listBox.appendChild(empty);
 
   function runFilter() {
     panelFilter = filter.value;
@@ -449,7 +455,7 @@ function buildBranchPicker(model) {
 
   // Anchored to the button, clamped to the viewport, kept in place while the
   // page scrolls under it. Set inline as well as in the injected stylesheet:
-  // nothing about where the menu lands may depend on any stylesheet's timing.
+  // nothing about where the menu lands may depend on a stylesheet's timing.
   function place() {
     const box = button.getBoundingClientRect();
     const left = Math.max(8, Math.min(box.right - PANEL_WIDTH, innerWidth - PANEL_WIDTH - 8));
@@ -541,6 +547,7 @@ function avatarFallback(commit) {
  *   branches, selected, defaultBranch, truncated, canFetch, onSelectBranches }
  */
 export function render(container, model) {
+  ensureUiStyle();
   const {
     owner, repo, commits, graph, heads, tags, fresh, filtered, hasMore,
     total, loaded, olderCount, failedWindows, onLoadOlder, onRefresh,
@@ -715,8 +722,13 @@ export function render(container, model) {
   }
 
   root.appendChild(shell);
+  // One swap, then a short fade: the row count and the frame's height change
+  // with every pick, and a hard cut through that reads as a flash.
+  root.classList.add('ggt-fade-in');
+  const scrollY = window.scrollY;
   container.textContent = '';
   container.appendChild(root);
+  if (window.scrollY !== scrollY) window.scrollTo({ top: scrollY });
 }
 
 /**

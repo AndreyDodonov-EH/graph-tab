@@ -7,7 +7,7 @@
 import { ensureTab, markTabSelected, markTabDeselected, repoNav, TAB_ID } from './tab.js';
 import { openRepoGraph, privateFreshEnabled, setPrivateFreshEnabled } from './data.js';
 import { layout } from './layout.js';
-import { render, renderStatus, closeBranchPicker } from './render.js';
+import { render, renderStatus, closeBranchPicker, setViewBusy } from './render.js';
 import { maybeWelcome } from './welcome.js';
 
 const VIEW_ID = 'ggt-view';
@@ -139,6 +139,7 @@ function rerender(view) {
     hasMore: source.hasMore(),
     onRefresh: reload,
     onLoadOlder: async () => {
+      setViewBusy(view, true);
       await source.loadOlder();
       rerender(view);
     },
@@ -149,6 +150,7 @@ function rerender(view) {
     // Adding branches only ever adds commits, so the loaded window survives:
     // no meta/chunk refetch, just the pull for the newly ticked branches.
     onSelectBranches: async (names) => {
+      setViewBusy(view, true);
       await source.selectBranches(names);
       rerender(view);
     },
