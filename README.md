@@ -44,7 +44,7 @@ Works on Chrome and Edge, Firefox is WiP.
   why it is off by default.
   Fetched commits are immutable, so they are cached (localStorage, keyed by
   oid) and never re-fetched.
-- **Branches** (`src/branches.js`, the header picker): which branches the
+- **Branches** (`src/branches.js`, `src/render.js`, `src/octicon.js`): which branches the
   graph draws is a choice, because a branch outside the snapshot window costs
   a request to pull in and not everyone wants every `dependabot/*` line. The
   default is free: the default branch (`HEAD`'s symref target from ls-refs, or
@@ -56,7 +56,12 @@ Works on Chrome and Edge, Firefox is WiP.
   everything away and answer with an empty pack). A branch that reaches back
   further than the fetch is drawn as a stub with a dashed tail rather than
   hidden, the way `git log --graph --all` shows a shallow or unrelated
-  history. Choices are remembered per repository.
+  history. Choices are remembered per repository. The picker itself is
+  modelled on Primer's SelectPanel — the component GitHub's own branch
+  switcher is built from: a 32px anchor button with a git-branch Octicon and
+  a `selected/total` counter, a 320px overlay with a filter box, and rows
+  whose selection is a leading check rather than a checkbox. It copies the
+  proportions and the CSS variables, not GitHub's class names (those churn).
 - **Ordering** (`src/order.js`): the network array's absolute position is a
   date axis, so commits spliced in from git or the commit pages are placed on
   it by their own date (`chronoIndex`) rather than stacked on top. Dates alone

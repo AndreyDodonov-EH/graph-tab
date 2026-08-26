@@ -93,17 +93,22 @@
   flex-wrap: wrap;
   gap: 10px;
 }
+/* Primer's medium button: 32px tall, 12px side padding, 14px label. The
+   graph sits inside GitHub's chrome, so its buttons have to line up with the
+   ones GitHub renders right next to them. */
 .ggt-btn {
-  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 12px;
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 26px;
-  color: var(--button-default-fgColor-rest, #24292f);
+  color: var(--button-default-fgColor-rest, #25292e);
   background: var(--button-default-bgColor-rest, #f6f8fa);
-  border: 1px solid var(--button-default-borderColor-rest, #d0d7de);
+  border: 1px solid var(--button-default-borderColor-rest, #d1d9e0);
   border-radius: 6px;
-  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
   cursor: pointer;
 }
 .ggt-btn:hover:enabled {
@@ -457,84 +462,195 @@ a.ggt-author:hover {
   background: var(--button-primary-bgColor-hover, #1c8139);
 }
 
-/* Branch picker: a small popup of checkboxes anchored under its toolbar
-   button, styled like GitHub's own overlays (Primer's SelectPanel). */
+
+/* Branch picker — Primer SelectPanel proportions, so it reads as one of
+   GitHub's own controls: a 32px anchor button (6px radius, 8px gap, 14px
+   label) and a 320px overlay (12px radius, the three-layer Primer shadow,
+   32px rows with a leading check instead of a checkbox). Every colour is a
+   GitHub CSS variable, so both themes follow the page. */
 .ggt-picker {
   position: relative;
 }
-.ggt-picker-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.ggt-select-btn {
+  gap: 8px;
+  font-weight: 400;
 }
-.ggt-caret {
-  width: 0;
-  height: 0;
-  border: 4px solid transparent;
-  border-top-color: currentColor;
-  border-bottom-width: 0;
-  opacity: 0.7;
+.ggt-select-btn:hover {
+  background: var(--button-default-bgColor-hover, #eff2f5);
 }
-.ggt-menu {
+.ggt-select-btn svg {
+  color: var(--fgColor-muted, #59636e);
+}
+.ggt-select-caret {
+  margin-left: -2px;
+}
+.ggt-counter {
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--bgColor-neutral-muted, rgba(129, 139, 152, 0.12));
+  border-radius: 2em;
+}
+
+.ggt-panel {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
   z-index: 30;
-  width: 300px;
+  display: flex;
+  flex-direction: column;
+  width: 320px;
+  max-height: 452px;
+  font-size: 14px;
+  color: var(--fgColor-default, #1f2328);
   background: var(--overlay-bgColor, var(--bgColor-default, #ffffff));
-  border: 1px solid var(--borderColor-default, #d1d9e0);
-  border-radius: 6px;
-  box-shadow: var(--shadow-floating-small, 0 6px 12px -3px rgba(31, 35, 40, 0.12));
+  border-radius: 12px;
+  box-shadow:
+    var(--borderColor-default, rgba(209, 217, 224, 0.25)) 0 0 0 1px,
+    rgba(37, 41, 46, 0.04) 0 6px 12px -3px,
+    rgba(37, 41, 46, 0.12) 0 6px 18px 0;
 }
-.ggt-menu-list {
-  max-height: 260px;
-  overflow-y: auto;
-  padding: 4px;
-}
-.ggt-menu-row {
+.ggt-panel-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
+  justify-content: space-between;
+  padding: 12px 8px 12px 16px;
+}
+.ggt-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.ggt-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--fgColor-muted, #59636e);
+  background: none;
+  border: 0;
   border-radius: 6px;
   cursor: pointer;
 }
-.ggt-menu-row:hover {
-  background: var(--control-transparent-bgColor-hover, rgba(208, 215, 222, 0.32));
+.ggt-icon-btn:hover {
+  background: var(--control-transparent-bgColor-hover, rgba(129, 139, 152, 0.12));
 }
-.ggt-menu-name {
+
+.ggt-filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 16px 8px;
+}
+.ggt-filter-icon {
+  position: absolute;
+  left: 8px;
+  color: var(--fgColor-muted, #59636e);
+  pointer-events: none;
+}
+.ggt-filter-input {
+  width: 100%;
+  height: 32px;
+  padding: 0 12px 0 30px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fgColor-default, #1f2328);
+  background: var(--bgColor-default, #ffffff);
+  border: 1px solid var(--control-borderColor-rest, #d1d9e0);
+  border-radius: 6px;
+}
+.ggt-filter-input::placeholder {
+  color: var(--fgColor-muted, #59636e);
+}
+.ggt-filter-input:focus {
+  border-color: var(--focus-outlineColor, #0969da);
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--focus-outlineColor, #0969da);
+}
+
+.ggt-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0 8px 8px;
+  overflow-y: auto;
+  list-style: none;
+}
+.ggt-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ggt-item:hover,
+.ggt-item:focus-visible {
+  background: var(--control-transparent-bgColor-hover, rgba(129, 139, 152, 0.12));
+  outline: none;
+}
+.ggt-item[aria-disabled='true'] {
+  cursor: default;
+  opacity: 0.55;
+}
+/* The check keeps its 16px column whether or not the row is selected, so the
+   labels stay on one axis — Primer's ActionList does the same. */
+.ggt-item-check {
+  flex: none;
+  visibility: hidden;
+  color: var(--fgColor-default, #1f2328);
+}
+.ggt-item-on .ggt-item-check {
+  visibility: visible;
+}
+.ggt-item-name {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ggt-menu-tag {
+.ggt-item-tag {
   flex: none;
-  padding: 0 6px;
-  font-size: 11px;
+  padding: 0 7px;
+  font-size: 12px;
   line-height: 18px;
   color: var(--fgColor-muted, #59636e);
-  border: 1px solid var(--borderColor-muted, #d1d9e0);
-  border-radius: 999px;
+  border: 1px solid var(--borderColor-default, #d1d9e0);
+  border-radius: 2em;
 }
-.ggt-menu-fetch {
+.ggt-item-fetch {
   color: var(--fgColor-attention, #9a6700);
-  border-color: var(--borderColor-attention-muted, #d4a72c66);
+  border-color: var(--borderColor-attention-muted, rgba(212, 167, 44, 0.4));
 }
-.ggt-menu-foot {
+.ggt-list-empty {
+  padding: 12px 8px;
+  color: var(--fgColor-muted, #59636e);
+}
+
+.ggt-panel-foot {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
   border-top: 1px solid var(--borderColor-muted, #d1d9e0);
 }
-.ggt-menu-apply {
-  margin-left: auto;
+.ggt-btn-primary {
+  color: var(--button-primary-fgColor-rest, #ffffff);
+  background: var(--button-primary-bgColor-rest, #1f883d);
+  border-color: var(--button-primary-borderColor-rest, rgba(31, 35, 40, 0.15));
+}
+.ggt-btn-primary:hover:enabled {
+  background: var(--button-primary-bgColor-hover, #1c8139);
 }
 .ggt-link {
   padding: 0;
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--fgColor-accent, #0969da);
   background: none;
   border: 0;
@@ -543,8 +659,9 @@ a.ggt-author:hover {
 .ggt-link:hover {
   text-decoration: underline;
 }
-.ggt-link:focus-visible,
-.ggt-menu-row input:focus-visible {
+.ggt-select-btn:focus-visible,
+.ggt-icon-btn:focus-visible,
+.ggt-link:focus-visible {
   outline: 2px solid var(--focus-outlineColor, #0969da);
-  outline-offset: 2px;
+  outline-offset: -2px;
 }

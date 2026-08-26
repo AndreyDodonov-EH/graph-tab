@@ -9,6 +9,7 @@
 // the graph, and a muted footer with the pagination button.
 
 import { initColumns } from './columns.js';
+import { octicon } from './octicon.js';
 
 const ROW_H = 28;
 const LANE_W = 14;
@@ -125,100 +126,194 @@ function buildShell(subtitle) {
 // The branch picker: which branches the graph draws.
 //
 // Not every branch is worth a lane, and the ones outside GitHub's snapshot
-// window cost a request to pull in, so the set is the user's call rather than
-// something guessed for them — the same shape as the "fetch fresh commits"
-// opt-in next to it. Choices are applied on "Apply", not per click, so
-// ticking three boxes is one fetch and not three.
+// window cost a request to pull in, so the set is the user's call. The panel
+// is modelled on Primer's SelectPanel — the same component GitHub's own
+// branch switcher is built from: a 32px anchor button with a leading
+// git-branch Octicon and a counter, a 320px overlay with a filter box, and a
+// list whose selected rows carry a leading check rather than a checkbox.
+// Nothing here reuses GitHub's class names (they churn); the sizes and the
+// CSS variables are what make it sit in the page as if it belonged.
+//
+// Ticks are applied on "Apply", not per click, so ticking three branches is
+// one fetch and not three.
 function buildBranchPicker(model) {
   const { branches, selected, defaultBranch, onSelectBranches, canFetch } = model;
   const box = el('div', 'ggt-picker');
 
-  const button = el('button', 'ggt-btn ggt-picker-btn');
+  const counter = el('span', 'ggt-counter');
+  const button = el('button', 'ggt-btn ggt-select-btn');
   button.type = 'button';
   button.setAttribute('aria-haspopup', 'true');
   button.setAttribute('aria-expanded', 'false');
   button.title = 'Choose which branches the graph draws';
-  button.append(`Branches ${selected.size}/${branches.length}`, el('span', 'ggt-caret'));
+  button.append(
+    octicon('git-branch'),
+    el('span', 'ggt-select-label', 'Branches'),
+    counter,
+    octicon('triangle-down', 'ggt-select-caret'),
+  );
 
-  const menu = el('div', 'ggt-menu');
-  menu.hidden = true;
+  const panel = el('div', 'ggt-panel');
+  panel.hidden = true;
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'Select branches');
 
-  const list = el('div', 'ggt-menu-list');
-  const boxes = new Map();
-  // Default branch first, then the ones already drawn, then the rest — the
-  // order people look for them in.
+  const head = el('div', 'ggt-panel-head');
+  head.append(el('span', 'ggt-panel-title', 'Select branches'));
+  const close = el('button', 'ggt-icon-btn');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Close');
+  close.appendChild(octicon('x'));
+  head.appendChild(close);
+  panel.appendChild(head);
+
+  const filterBox = el('div', 'ggt-filter');
+  filterBox.appendChild(octicon('search', 'ggt-filter-icon'));
+  const filter = el('input', 'ggt-filter-input');
+  filter.type = 'text';
+  filter.placeholder = 'Find a branch...';
+  filter.setAttribute('aria-label', 'Filter branches');
+  filterBox.appendChild(filter);
+  panel.appendChild(filterBox);
+
+  const list = el('ul', 'ggt-list');
+  list.setAttribute('role', 'menu');
+  const empty = el('li', 'ggt-list-empty', 'No branches match.');
+  empty.hidden = true;
+
+  // Pending ticks live on the rows until Apply; the default branch first,
+  // then the ones already drawn, then the rest — the order people look in.
+  const rows = [];
   const ordered = [...branches].sort((a, b) => {
     const rank = (branch) =>
       (branch.name === defaultBranch ? 0 : 2) - (selected.has(branch.name) ? 1 : 0);
     return rank(a) - rank(b) || a.name.localeCompare(b.name);
   });
   for (const branch of ordered) {
-    const row = el('label', 'ggt-menu-row');
-    const input = el('input');
-    input.type = 'checkbox';
-    input.checked = selected.has(branch.name);
-    boxes.set(branch.name, input);
-    row.append(input, el('span', 'ggt-menu-name', branch.name));
-    if (branch.name === defaultBranch) row.appendChild(el('span', 'ggt-menu-tag', 'default'));
-    else if (!branch.loaded) {
-      // Nothing can pull this branch in without a live ref source: a private
-      // repository rejects anonymous git, so it needs the freshness opt-in.
-      input.disabled = !canFetch;
-      const hint = el('span', 'ggt-menu-tag ggt-menu-fetch', canFetch ? 'fetch' : 'unavailable');
+    const item = el('li', 'ggt-item');
+    item.setAttribute('role', 'menuitemcheckbox');
+    item.tabIndex = -1;
+    // Nothing can pull this branch in without a live ref source: a private
+    // repository rejects anonymous git, so it needs the freshness opt-in.
+    const locked = !branch.loaded && !canFetch;
+    item.append(
+      octicon('check', 'ggt-item-check'),
+      el('span', 'ggt-item-name', branch.name),
+    );
+    if (branch.name === defaultBranch) {
+      item.appendChild(el('span', 'ggt-item-tag', 'default'));
+    } else if (!branch.loaded) {
+      const hint = el('span', 'ggt-item-tag ggt-item-fetch', canFetch ? 'fetch' : 'unavailable');
       hint.title = canFetch
         ? 'Outside the loaded window — ticking this pulls the branch in.'
         : 'Outside the loaded window. Tick "fetch fresh commits" to make it available.';
-      row.appendChild(hint);
+      item.appendChild(hint);
     }
-    list.appendChild(row);
+    const row = { name: branch.name, item, locked, checked: selected.has(branch.name) };
+    if (locked) item.setAttribute('aria-disabled', 'true');
+    rows.push(row);
+    list.appendChild(item);
   }
-  menu.appendChild(list);
+  list.appendChild(empty);
+  panel.appendChild(list);
 
-  const foot = el('div', 'ggt-menu-foot');
-  const setAll = (on) => {
-    for (const [name, input] of boxes) {
-      if (!input.disabled) input.checked = on || name === defaultBranch;
-    }
-  };
-  const all = el('button', 'ggt-link', 'All');
-  all.type = 'button';
-  all.addEventListener('click', () => setAll(true));
-  const none = el('button', 'ggt-link', defaultBranch ? `Only ${defaultBranch}` : 'None');
-  none.type = 'button';
-  none.addEventListener('click', () => setAll(false));
-  const apply = el('button', 'ggt-btn ggt-menu-apply', 'Apply');
+  const foot = el('div', 'ggt-panel-foot');
+  const toggleAll = el('button', 'ggt-link');
+  toggleAll.type = 'button';
+  const apply = el('button', 'ggt-btn ggt-btn-primary', 'Apply');
   apply.type = 'button';
+  foot.append(toggleAll, apply);
+  panel.appendChild(foot);
+
+  const selectable = () => rows.filter((row) => !row.locked);
+  const pending = () => rows.filter((row) => row.checked);
+
+  function paint() {
+    for (const row of rows) {
+      row.item.setAttribute('aria-checked', String(row.checked));
+      row.item.classList.toggle('ggt-item-on', row.checked);
+    }
+    const allOn = selectable().every((row) => row.checked);
+    toggleAll.textContent = allOn ? 'Deselect all' : 'Select all';
+    // Applying an empty set would just fall back to the automatic default,
+    // which is not what an empty list looks like it means.
+    apply.disabled = pending().length === 0;
+    counter.textContent = `${pending().length}/${rows.length}`;
+  }
+
+  const toggle = (row) => {
+    if (row.locked) return;
+    row.checked = !row.checked;
+    paint();
+  };
+  for (const row of rows) {
+    row.item.addEventListener('click', () => toggle(row));
+    row.item.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggle(row);
+      }
+    });
+  }
+
+  toggleAll.addEventListener('click', () => {
+    const on = !selectable().every((row) => row.checked);
+    for (const row of selectable()) row.checked = on;
+    paint();
+  });
+
   apply.addEventListener('click', async () => {
-    const names = [...boxes].filter(([, input]) => input.checked).map(([name]) => name);
     apply.disabled = true;
     apply.textContent = 'Loading…';
-    await onSelectBranches(names);
+    await onSelectBranches(pending().map((row) => row.name));
   });
-  foot.append(all, none, apply);
-  menu.appendChild(foot);
 
-  const close = () => {
-    menu.hidden = true;
+  filter.addEventListener('input', () => {
+    const needle = filter.value.trim().toLowerCase();
+    let shown = 0;
+    for (const row of rows) {
+      const hit = !needle || row.name.toLowerCase().includes(needle);
+      row.item.hidden = !hit;
+      if (hit) shown++;
+    }
+    empty.hidden = shown > 0;
+  });
+
+  // Open / close, and arrow-key movement through the list, the way GitHub's
+  // own overlays behave.
+  const shut = () => {
+    panel.hidden = true;
     button.setAttribute('aria-expanded', 'false');
     document.removeEventListener('click', onDocClick, true);
   };
   const onDocClick = (event) => {
-    if (!box.contains(event.target)) close();
+    if (!box.contains(event.target)) shut();
   };
-  button.addEventListener('click', () => {
-    if (menu.hidden) {
-      menu.hidden = false;
-      button.setAttribute('aria-expanded', 'true');
-      document.addEventListener('click', onDocClick, true);
-    } else {
-      close();
+  const open = () => {
+    panel.hidden = false;
+    button.setAttribute('aria-expanded', 'true');
+    document.addEventListener('click', onDocClick, true);
+    filter.focus();
+  };
+  button.addEventListener('click', () => (panel.hidden ? open() : shut()));
+  close.addEventListener('click', shut);
+  panel.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      shut();
+      button.focus();
+      return;
     }
-  });
-  menu.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') close();
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    event.preventDefault();
+    const visible = rows.filter((row) => !row.item.hidden).map((row) => row.item);
+    if (visible.length === 0) return;
+    const at = visible.indexOf(document.activeElement);
+    const step = event.key === 'ArrowDown' ? 1 : -1;
+    visible[(at + step + visible.length) % visible.length].focus();
   });
 
-  box.append(button, menu);
+  paint();
+  box.append(button, panel);
   return box;
 }
 
