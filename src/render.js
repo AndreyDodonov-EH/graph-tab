@@ -314,13 +314,23 @@ function buildBranchPicker(model) {
   filter.addEventListener('input', runFilter);
 
   // Anchored to the button, clamped to the viewport, kept in place while the
-  // page scrolls under it.
+  // page scrolls under it. The positioning itself is set inline rather than
+  // left to the stylesheet: the manifest-injected CSS only refreshes when the
+  // extension is reloaded, while the modules are re-read on every page load,
+  // so after an update the JS can run against last version's CSS. A fixed
+  // element with no rules at all would then sit at its static position — the
+  // end of <body>, bottom-left of the page — which is exactly what happened.
   function place() {
     const box = button.getBoundingClientRect();
     const left = Math.max(8, Math.min(box.right - PANEL_WIDTH, innerWidth - PANEL_WIDTH - 8));
-    panel.style.left = `${left}px`;
-    panel.style.top = `${box.bottom + 4}px`;
-    panel.style.maxHeight = `${Math.max(180, innerHeight - box.bottom - 24)}px`;
+    Object.assign(panel.style, {
+      position: 'fixed',
+      zIndex: '1000',
+      width: `${PANEL_WIDTH}px`,
+      left: `${left}px`,
+      top: `${box.bottom + 4}px`,
+      maxHeight: `${Math.max(180, innerHeight - box.bottom - 24)}px`,
+    });
   }
 
   const onDocClick = (event) => {
