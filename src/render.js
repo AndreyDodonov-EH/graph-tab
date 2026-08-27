@@ -227,16 +227,20 @@ export function render(container, model) {
     const tagNames = tagsByOid.get(commit.oid);
     if (refs || tagNames) {
       const refsBox = el('span', 'ggt-refs');
+      // /tree/ serves both branches and tags; encode per segment so names
+      // with slashes stay path-shaped, as GitHub's own links do.
+      const treeHref = (name) =>
+        `/${owner}/${repo}/tree/${name.split('/').map(encodeURIComponent).join('/')}`;
       for (const name of refs || []) {
         const chip = el('a', 'ggt-ref', name);
-        chip.href = `/${owner}/${repo}/tree/${name.split('/').map(encodeURIComponent).join('/')}`;
+        chip.href = treeHref(name);
         chip.style.color = colorOf(graph.nodes[i].color);
         chip.style.borderColor = 'currentColor';
         refsBox.appendChild(chip);
       }
       for (const name of tagNames || []) {
         const chip = el('a', 'ggt-ref ggt-tag', name);
-        chip.href = `/${owner}/${repo}/releases/tag/${encodeURIComponent(name)}`;
+        chip.href = treeHref(name);
         chip.title = `tag: ${name}`;
         chip.style.color = colorOf(graph.nodes[i].color);
         chip.style.borderColor = 'currentColor';

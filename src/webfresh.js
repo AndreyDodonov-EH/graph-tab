@@ -23,6 +23,25 @@ const MAX_PAGES = 100;
 // so the list is capped to the newest entries the endpoint returns first.
 const MAX_TAGS = 30;
 
+// Ref resolves go to session-cookie web endpoints, where a burst of dozens of
+// parallel requests trips GitHub's abuse limiter (429s). Keep a few in flight.
+const REF_CONCURRENCY = 5;
+
+// Map `fn` over `items` with at most REF_CONCURRENCY calls in flight,
+// preserving order.
+async function mapLimited(items, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(REF_CONCURRENCY, items.length) }, worker));
+  return results;
+}
+
 const JSON_HEADERS = { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' };
 
 // Commits are immutable, so an oid-keyed localStorage cache never goes
@@ -91,15 +110,11 @@ export async function webTags(owner, repo) {
   if (!response.ok) throw new Error(`refs: HTTP ${response.status}`);
   const { refs } = await response.json();
   if (!Array.isArray(refs)) return [];
-  const tags = await Promise.all(
-    refs
-      .filter((name) => typeof name === 'string' && name)
-      .slice(0, MAX_TAGS)
-      .map((name) =>
-        latestOid(base, name)
-          .then((oid) => (oid ? { name, oid } : null))
-          .catch(() => null),
-      ),
+  const names = refs.filter((name) => typeof name === 'string' && name).slice(0, MAX_TAGS);
+  const tags = await mapLimited(names, (name) =>
+    latestOid(base, name)
+      .then((oid) => (oid ? { name, oid } : null))
+      .catch(() => null),
   );
   return tags.filter(Boolean);
 }
@@ -163,13 +178,11 @@ async function fetchCommit(base, oid) {
  */
 export async function webFreshen(owner, repo, snapshotHeads, byOid, onProgress = () => {}) {
   const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  const heads = await Promise.all(
-    snapshotHeads.map(async (head) => ({
-      name: head.name,
-      snapOid: head.oid,
-      oid: await latestOid(base, head.name),
-    })),
-  );
+  const heads = await mapLimited(snapshotHeads, async (head) => ({
+    name: head.name,
+    snapOid: head.oid,
+    oid: await latestOid(base, head.name),
+  }));
 
   // Shared memo so parallel branch walks meeting at a merge fetch a page
   // once. Cache hits are free: only network fetches count toward the cap.
