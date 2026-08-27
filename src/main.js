@@ -115,6 +115,7 @@ function rerender(view) {
     commits,
     graph: layout(commits),
     heads: source.heads,
+    tags: source.tags,
     fresh: source.fresh,
     private: source.private,
     privateFresh: privateFreshEnabled(),

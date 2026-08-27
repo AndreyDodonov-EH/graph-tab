@@ -92,19 +92,33 @@ export function ensureTab(onOpen) {
   icon.setAttribute('width', '16');
   icon.setAttribute('height', '16');
   icon.setAttribute('aria-hidden', 'true');
+  icon.setAttribute('focusable', 'false');
+  icon.setAttribute('data-component', 'Octicon');
+  icon.setAttribute('fill', 'currentColor');
+  icon.setAttribute('display', 'inline-block');
+  icon.setAttribute('overflow', 'visible');
+  icon.setAttribute('style', 'vertical-align:text-bottom');
   copyClasses(siblingLink?.querySelector('svg'), icon);
   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   path.setAttribute('d', ICON_PATH);
   icon.appendChild(path);
 
+  // Primer's current UnderlineNav styles its icon through this component
+  // slot. Without the wrapper the icon inherits the link's darker color and
+  // loses the native 8px gap before the label, making it look too heavy.
+  const iconSlot = document.createElement('span');
+  iconSlot.setAttribute('data-component', 'icon');
+  iconSlot.appendChild(icon);
+
   // data-content lets GitHub's CSS reserve the bold width, so the tab does
   // not shift when it becomes selected; our fallback CSS mirrors the trick.
   const label = document.createElement('span');
   copyClasses(siblingLink?.querySelector('span[data-content]'), label);
+  label.setAttribute('data-component', 'text');
   label.setAttribute('data-content', 'Graph');
   label.textContent = 'Graph';
 
-  link.appendChild(icon);
+  link.appendChild(iconSlot);
   link.appendChild(label);
   item.appendChild(link);
   nav.appendChild(item);

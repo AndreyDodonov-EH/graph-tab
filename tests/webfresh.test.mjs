@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { webFreshen } from '../src/webfresh.js';
+import { webFreshen, webTags } from '../src/webfresh.js';
 
 const sha = (letter) => letter.repeat(40);
 
@@ -240,3 +240,29 @@ test('a branch that hits the page cap reverts alone; others still freshen', () =
     },
   );
 });
+
+test('webTags lists tags and resolves each to its peeled commit', () =>
+  withFetch(
+    {
+      '/o/r/refs?type=tag': () => jsonResponse({ refs: ['v2.0.0', 'v1.0.0', 'gone'] }),
+      '/o/r/latest-commit/v2.0.0': () => jsonResponse({ oid: sha('d') }),
+      '/o/r/latest-commit/v1.0.0': () => jsonResponse({ oid: sha('a') }),
+      // deleted between the list and the resolve: dropped, not fatal
+      '/o/r/latest-commit/gone': () => new Response('', { status: 404 }),
+    },
+    async () => {
+      const tags = await webTags('o', 'r');
+      assert.deepEqual(tags, [
+        { name: 'v2.0.0', oid: sha('d') },
+        { name: 'v1.0.0', oid: sha('a') },
+      ]);
+    },
+  ));
+
+test('webTags surfaces a failed tag list as a throw', () =>
+  withFetch(
+    {
+      '/o/r/refs?type=tag': () => new Response('', { status: 500 }),
+    },
+    () => assert.rejects(() => webTags('o', 'r'), /refs: HTTP 500/),
+  ));

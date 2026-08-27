@@ -20,7 +20,7 @@
 //   - parents come as [sha, time, space] tuples.
 
 import { lsRefs, fetchMissingCommits } from './gitproto.js';
-import { webFreshen } from './webfresh.js';
+import { webFreshen, webTags } from './webfresh.js';
 
 const WINDOW = 100;
 
@@ -231,20 +231,22 @@ async function freshen(owner, repo, heads, byOid, nextIdx, onProgress) {
   // session cookie over the web endpoints instead; identities come straight
   // from the page payload, so no name→login recovery is needed.
   if (isPrivateRepo()) {
-    if (!privateFreshEnabled()) return { heads, fresh: false };
+    if (!privateFreshEnabled()) return { heads, tags: [], fresh: false };
     try {
       const result = await webFreshen(owner, repo, heads, byOid, onProgress);
       for (const commit of topoOrder(result.commits)) {
         if (!byOid.has(commit.oid)) byOid.set(commit.oid, { ...commit, idx: nextIdx++ });
       }
-      return { heads: result.heads, fresh: result.fresh };
+      // Tags are decoration: losing them must not revert a good freshen.
+      const tags = await webTags(owner, repo).catch(() => []);
+      return { heads: result.heads, tags, fresh: result.fresh };
     } catch {
-      return { heads, fresh: false };
+      return { heads, tags: [], fresh: false };
     }
   }
   try {
-    const fresh = await lsRefs(owner, repo);
-    if (fresh.length === 0) return { heads, fresh: false };
+    const { heads: fresh, tags } = await lsRefs(owner, repo);
+    if (fresh.length === 0) return { heads, tags, fresh: false };
     const wants = [...new Set(fresh.map((h) => h.oid))].filter((oid) => !byOid.has(oid));
     if (wants.length > 0) {
       const haves = heads.map((h) => h.oid);
@@ -257,7 +259,7 @@ async function freshen(owner, repo, heads, byOid, nextIdx, onProgress) {
       const snapOids = new Set(heads.map((h) => h.oid));
       const isKnown = (oid) => byOid.has(oid) || snapOids.has(oid);
       if (!wants.every((want) => walkCloses(want, fetched, isKnown))) {
-        return { heads, fresh: false };
+        return { heads, tags, fresh: false };
       }
       // git objects carry name+email, not GitHub identities; recover login and
       // avatar from snapshot commits by the same author, else avatar by email.
@@ -281,9 +283,9 @@ async function freshen(owner, repo, heads, byOid, nextIdx, onProgress) {
         });
       }
     }
-    return { heads: fresh, fresh: true };
+    return { heads: fresh, tags, fresh: true };
   } catch {
-    return { heads, fresh: false };
+    return { heads, tags: [], fresh: false };
   }
 }
 
@@ -293,6 +295,8 @@ async function freshen(owner, repo, heads, byOid, nextIdx, onProgress) {
  *   are pulled one request at a time (the private-repo opt-in path).
  * @returns {Promise<{
  *   owner, repo, heads,
+ *   tags,     // [{ name, oid }] with annotated tags peeled to their commit;
+ *             // empty when refs could not be read (opted-out private repo, offline)
  *   fresh,    // false when no top-up was available (opted-out private repo, offline)
  *   private,  // true when freshness needs the opt-in (git endpoints reject the session)
  *   view(): { commits, filtered },  // newest-first, reachability-filtered
@@ -337,6 +341,7 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
     owner,
     repo,
     heads,
+    tags: freshened.tags,
     fresh: freshened.fresh,
     private: isPrivateRepo(),
     total,

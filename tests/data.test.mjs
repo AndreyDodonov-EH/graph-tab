@@ -74,7 +74,9 @@ test('private repo with the opt-in freshens via web pages, never git', async () 
         commits: [{ id: OID, parents: [], author: 'X', login: 'x', date: '2026-01-01 00:00:00', message: 'old' }],
       });
     }
+    if (path.includes('/refs?type=tag')) return jsonResponse({ refs: ['v1'] });
     if (path.includes('/latest-commit/main')) return jsonResponse({ oid: FRESH_OID });
+    if (path.includes('/latest-commit/v1')) return jsonResponse({ oid: OID });
     if (path.includes(`/commit/${FRESH_OID}`)) {
       return jsonResponse({
         payload: {
@@ -95,6 +97,7 @@ test('private repo with the opt-in freshens via web pages, never git', async () 
     assert.equal(source.private, true);
     assert.equal(source.fresh, true);
     assert.deepEqual(source.heads, [{ name: 'main', oid: FRESH_OID }]);
+    assert.deepEqual(source.tags, [{ name: 'v1', oid: OID }]);
     const { commits } = source.view();
     assert.deepEqual(commits.map((c) => c.oid), [FRESH_OID, OID]);
     assert.equal(commits[0].login, 'y');
@@ -113,7 +116,7 @@ test('private repo without the opt-in keeps the snapshot, marked stale', async (
   };
   globalThis.fetch = async (url) => {
     const path = String(url);
-    if (path.includes('.git/') || path.includes('/latest-commit/')) {
+    if (path.includes('.git/') || path.includes('/latest-commit/') || path.includes('/refs?')) {
       throw new Error('freshen fetch without opt-in: ' + path);
     }
     if (path.includes('/network/meta')) {
@@ -134,6 +137,7 @@ test('private repo without the opt-in keeps the snapshot, marked stale', async (
     const source = await openRepoGraph('o', 'r');
     assert.equal(source.private, true);
     assert.equal(source.fresh, false);
+    assert.deepEqual(source.tags, []);
     assert.equal(source.view().commits.length, 1);
   } finally {
     globalThis.fetch = realFetch;
@@ -291,7 +295,11 @@ function publicFreshenFetch({ snapshotOid, headOid, packObjects }) {
     }
     if (path.includes('.git/git-upload-pack')) {
       if (String(init.body).includes('command=ls-refs')) {
-        return new Response(pkt(`${headOid} refs/heads/main\n`).toString() + '0000');
+        return new Response(
+          pkt(`${headOid} refs/heads/main\n`).toString() +
+            pkt(`${snapshotOid} refs/tags/v1\n`).toString() +
+            '0000',
+        );
       }
       const body = Buffer.concat([
         pkt('packfile\n'),
@@ -317,6 +325,7 @@ test('public freshen splices commits when the pack closes the gap', async () => 
     const source = await openRepoGraph('o', 'r');
     assert.equal(source.fresh, true);
     assert.deepEqual(source.heads, [{ name: 'main', oid: oidOf(c) }]);
+    assert.deepEqual(source.tags, [{ name: 'v1', oid: OID }]);
     assert.deepEqual(source.view().commits.map((commit) => commit.oid), [oidOf(c), oidOf(b), OID]);
   } finally {
     globalThis.fetch = realFetch;
@@ -339,6 +348,9 @@ test('public freshen keeps the consistent snapshot when the pack leaves a gap', 
     const source = await openRepoGraph('o', 'r');
     assert.equal(source.fresh, false);
     assert.deepEqual(source.heads, [{ name: 'main', oid: OID }]);
+    // exact tags survive even when splicing is refused: they are ref data,
+    // not spliced history
+    assert.deepEqual(source.tags, [{ name: 'v1', oid: OID }]);
     assert.deepEqual(source.view().commits.map((commit) => commit.oid), [OID]);
   } finally {
     globalThis.fetch = realFetch;
