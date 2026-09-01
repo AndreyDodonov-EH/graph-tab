@@ -5,7 +5,9 @@
 //   GET /{owner}/{repo}/latest-commit/{ref}   (Accept: json)
 //     -> { oid, ... } — the exact branch head
 //   GET /{owner}/{repo}/commit/{oid}          (Accept: json, ~3 KB)
-//     -> payload.commit: oid, parents (full shas), authoredDate,
+//     -> payload.commit — or payload.commitRoute.commit, which is where
+//        GitHub moved the same object; both shapes are accepted — with
+//        oid, parents (full shas), authoredDate,
 //        shortMessage(Markdown(Link)), bodyMessageHtml,
 //        authors [{ login, displayName, avatarUrl }]
 //     (the same route serves ~230 KB HTML with the payload embedded as
@@ -119,15 +121,23 @@ export async function webTags(owner, repo) {
   return tags.filter(Boolean);
 }
 
-// payload.commit out of an HTML commit page: several react-app.embeddedData
-// blobs are embedded, the commit one has payload.commit. GitHub escapes
+// The commit object lives at payload.commit on the older shape and at
+// payload.commitRoute.commit on the current one; the object itself is
+// identical, so both are read and the first match wins.
+function commitOf(payload) {
+  return payload?.commit ?? payload?.commitRoute?.commit ?? null;
+}
+
+// The commit payload out of an HTML commit page: several react-app.embeddedData
+// blobs are embedded, only one carries the commit. GitHub escapes
 // every "<" as \u003c inside them, so slicing to the next </script> is safe.
 function embeddedCommit(html, oid) {
   const marker = /data-target="react-app\.embeddedData">/g;
   while (marker.exec(html)) {
     try {
       const { payload } = JSON.parse(html.slice(marker.lastIndex, html.indexOf('</script>', marker.lastIndex)));
-      if (payload?.commit?.oid === oid) return payload.commit;
+      const commit = commitOf(payload);
+      if (commit?.oid === oid) return commit;
     } catch {
       // not the blob we want
     }
@@ -142,9 +152,23 @@ async function fetchCommit(base, oid) {
     cache: 'no-store',
   });
   if (!response.ok) throw new Error(`commit: HTTP ${response.status}`);
-  const commit = (response.headers.get('content-type') || '').includes('json')
-    ? (await response.json()).payload?.commit
-    : embeddedCommit(await response.text(), oid);
+  // The JSON route can answer 200 with a shape that carries no commit at all;
+  // the HTML page still embeds one, so fall back on content rather than on the
+  // content-type alone — keying the fallback off the header would skip it
+  // exactly when the JSON turned out to be useless.
+  let commit = null;
+  if ((response.headers.get('content-type') || '').includes('json')) {
+    commit = commitOf((await response.json()).payload);
+    if (!commit) {
+      const html = await fetch(`${base}/commit/${oid}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      }).then((r) => (r.ok ? r.text() : ''));
+      commit = embeddedCommit(html, oid);
+    }
+  } else {
+    commit = embeddedCommit(await response.text(), oid);
+  }
   if (!commit || commit.oid !== oid || !Array.isArray(commit.parents)) {
     throw new Error('commit: no payload');
   }

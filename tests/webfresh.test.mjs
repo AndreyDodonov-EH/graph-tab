@@ -266,3 +266,70 @@ test('webTags surfaces a failed tag list as a throw', () =>
     },
     () => assert.rejects(() => webTags('o', 'r'), /refs: HTTP 500/),
   ));
+
+// GitHub moved the commit object from payload.commit to
+// payload.commitRoute.commit. Both shapes must walk identically, otherwise
+// every page fetch throws "commit: no payload", the walk is abandoned and the
+// branch silently reverts to its stale snapshot head.
+const commitRouteJson = (commit) => jsonResponse({ payload: { commitRoute: { commit } } });
+
+test('reads the commit object from payload.commitRoute.commit', () => {
+  const byOid = new Map([[sha('a'), {}]]);
+  return withFetch(
+    {
+      '/o/r/latest-commit/main': () => jsonResponse({ oid: sha('c') }),
+      [`/o/r/commit/${sha('c')}`]: () =>
+        commitRouteJson({
+          oid: sha('c'),
+          parents: [sha('a')],
+          authoredDate: '2026-08-19T10:00:00Z',
+          shortMessageMarkdown: '<div>merge: land the thing</div>',
+          authors: [{ login: 'x', displayName: 'X', avatarUrl: 'https://a/x.png' }],
+        }),
+    },
+    async () => {
+      const result = await webFreshen('o', 'r', [{ name: 'main', oid: sha('a') }], byOid);
+      assert.equal(result.fresh, true);
+      assert.deepEqual(result.heads, [{ name: 'main', oid: sha('c') }]);
+      assert.equal(result.commits.length, 1);
+      assert.equal(result.commits[0].oid, sha('c'));
+      assert.deepEqual(result.commits[0].parents, [sha('a')]);
+      assert.equal(result.commits[0].subject, 'merge: land the thing');
+    },
+  );
+});
+
+test('falls back to the embedded HTML payload when the JSON carries no commit', () => {
+  const byOid = new Map([[sha('a'), {}]]);
+  const commit = {
+    oid: sha('c'),
+    parents: [sha('a')],
+    authoredDate: '2026-08-19T10:00:00Z',
+    shortMessageMarkdown: '<div>from html</div>',
+    authors: [{ login: 'x', displayName: 'X', avatarUrl: 'https://a/x.png' }],
+  };
+  // Same URL twice: the JSON attempt first, the HTML page after it came back
+  // without a commit — so the fallback cannot key off the content-type.
+  let jsonServed = false;
+  return withFetch(
+    {
+      '/o/r/latest-commit/main': () => jsonResponse({ oid: sha('c') }),
+      [`/o/r/commit/${sha('c')}`]: () => {
+        if (!jsonServed) {
+          jsonServed = true;
+          return jsonResponse({ payload: { commitRoute: {} } });
+        }
+        return new Response(
+          `<script data-target="react-app.embeddedData">${JSON.stringify({ payload: { commit } })}</script>`,
+          { headers: { 'content-type': 'text/html' } },
+        );
+      },
+    },
+    async () => {
+      const result = await webFreshen('o', 'r', [{ name: 'main', oid: sha('a') }], byOid);
+      assert.equal(jsonServed, true, 'the JSON route must be tried first');
+      assert.equal(result.fresh, true);
+      assert.equal(result.commits[0].subject, 'from html');
+    },
+  );
+});
