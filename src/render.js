@@ -755,7 +755,16 @@ export function render(container, model) {
     label.append(box, 'fetch fresh commits');
     actions.appendChild(label);
   }
-  const pill = el('span', 'ggt-pill' + (fresh ? ' ggt-pill-fresh' : ''), fresh ? 'Fresh' : 'Cached');
+  // On a private repo the pill is also clickable: it flips the same
+  // "fetch fresh commits" switch as the checkbox. Looks identical to the span.
+  const pill = el(priv ? 'button' : 'span', 'ggt-pill' + (fresh ? ' ggt-pill-fresh' : ''), fresh ? 'Fresh' : 'Cached');
+  if (priv) {
+    pill.type = 'button';
+    pill.addEventListener('click', () => {
+      pill.disabled = true;
+      onToggleFresh(!privateFresh);
+    });
+  }
   pill.title = fresh
     ? 'Branch heads were verified live; the graph is current.'
     : priv && !privateFresh
