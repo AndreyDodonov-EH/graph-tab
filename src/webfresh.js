@@ -14,12 +14,18 @@
 //      react-app.embeddedData JSON — kept as a parsing fallback)
 //
 // Parents only come from the commit route, so this still costs one request
-// per missing commit — hence the opt-in in data.js and MAX_PAGES. Only
-// branches whose head moved are walked, each independently: a branch that
+// per missing commit — hence MAX_PAGES. Only branches whose head moved are
+// walked, each independently: a branch that
 // fails (cap hit, endpoint change) keeps its stale-but-consistent snapshot
 // head while the others still freshen.
 
 const MAX_PAGES = 100;
+
+// A branch the snapshot window does not contain has to be walked from its tip
+// downwards, and nothing guarantees it ever meets the loaded history — so a
+// single such branch gets a small budget and is drawn as a stub with a dashed
+// tail rather than being allowed to spend the whole page allowance.
+const MAX_STUB_PAGES = 12;
 
 // Tags cost one /latest-commit request each (names come bare from /refs),
 // so the list is capped to the newest entries the endpoint returns first.
@@ -92,6 +98,25 @@ async function latestOid(base, ref) {
   const { oid } = await response.json();
   if (!/^[0-9a-f]{40}$/.test(oid || '')) throw new Error('latest-commit: no oid');
   return oid;
+}
+
+/**
+ * Every branch of a private repo over the same session-cookie web endpoint:
+ * { names, head }. `/refs?type=branch` answers with bare names and lists the
+ * repository's default branch first (checked against the `defaultBranch` the
+ * repo page embeds), which is the one branch the graph always draws.
+ */
+export async function webBranches(owner, repo) {
+  const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  const response = await fetch(`${base}/refs?type=branch`, {
+    headers: JSON_HEADERS,
+    credentials: 'include',
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error(`refs: HTTP ${response.status}`);
+  const { refs } = await response.json();
+  const names = Array.isArray(refs) ? refs.filter((name) => typeof name === 'string' && name) : [];
+  return { names, head: names[0] || '' };
 }
 
 /**
@@ -194,19 +219,34 @@ async function fetchCommit(base, oid) {
 
 /**
  * Exact branch heads plus the commits the snapshot is missing:
- * { heads, commits, fresh }. Commits carry real GitHub identities
+ * { heads, commits, fresh, truncated }. Commits carry real GitHub identities
  * (login/avatar straight from the payload — better than the git path's
  * name→login guessing). fresh is false when some moved branch could not be
- * walked completely and was reverted to its snapshot head.
+ * walked completely and was reverted to its snapshot head; truncated lists
+ * the branches drawn as a stub because their history never met the window.
+ *
+ * `refs` is [{ name, oid, materialize }]. Without `materialize` a branch is
+ * only walked when its head moved past the snapshot — the freshness job, and
+ * the cheap default. With it, a branch whose tip is outside the loaded window
+ * is pulled in as well (bounded by MAX_STUB_PAGES), which is what makes a
+ * branch the user ticked in the header picker actually appear in the graph.
+ *
  * onProgress is called with a running count of network fetches.
  */
-export async function webFreshen(owner, repo, snapshotHeads, byOid, onProgress = () => {}) {
+export async function webFreshen(owner, repo, refs, byOid, onProgress = () => {}) {
   const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  const heads = await mapLimited(snapshotHeads, async (head) => ({
-    name: head.name,
-    snapOid: head.oid,
-    oid: await latestOid(base, head.name),
-  }));
+  const heads = await mapLimited(refs, async (ref) => {
+    const oid = await latestOid(base, ref.name);
+    return {
+      name: ref.name,
+      snapOid: ref.oid,
+      materialize: !!ref.materialize,
+      oid,
+      // Recorded now: the fallback below rewrites `oid`, and the splice
+      // loop still needs to know which branches had actually moved.
+      moved: !!ref.oid && !!oid && oid !== ref.oid,
+    };
+  });
 
   // Shared memo so parallel branch walks meeting at a merge fetch a page
   // once. Cache hits are free: only network fetches count toward the cap.
@@ -237,15 +277,20 @@ export async function webFreshen(owner, repo, snapshotHeads, byOid, onProgress =
 
   // A walk ends at loaded snapshot commits, or at any snapshot head: heads
   // below the loaded window are still known history, not missing commits.
-  const known = new Set(snapshotHeads.map((head) => head.oid));
+  const known = new Set(refs.map((ref) => ref.oid).filter(Boolean));
 
   // Breadth-first from a moved head, each wave of parents in parallel.
-  async function walk(startOid) {
+  // `stop` decides where the walk ends; `limit` caps how many commits it may
+  // collect (Infinity for the freshness walks, which have to close the gap
+  // or be discarded entirely).
+  async function walk(startOid, stop, limit) {
     const chain = [];
     const seen = new Set();
     let wave = [startOid];
-    while (wave.length > 0) {
-      const oids = wave.filter((oid) => !byOid.has(oid) && !known.has(oid) && !seen.has(oid));
+    while (wave.length > 0 && chain.length < limit) {
+      const oids = wave
+        .filter((oid) => !stop(oid) && !seen.has(oid))
+        .slice(0, limit - chain.length);
       for (const oid of oids) seen.add(oid);
       const commits = await Promise.all(oids.map(page));
       chain.push(...commits);
@@ -254,17 +299,30 @@ export async function webFreshen(owner, repo, snapshotHeads, byOid, onProgress =
     return chain;
   }
 
+  const reached = (oid) => byOid.has(oid) || known.has(oid);
+
   const chains = await Promise.all(
     heads.map((head) => {
       if (!head.oid) return null; // branch deleted; dropped below
-      if (head.oid === head.snapOid || byOid.has(head.oid)) return []; // nothing missing
-      return walk(head.oid).catch(() => null);
+      if (byOid.has(head.oid)) return []; // already drawn
+      if (head.moved) {
+        // Moved past the snapshot: the gap has to close, or the branch keeps
+        // its stale-but-consistent head.
+        return walk(head.oid, reached, Infinity).catch(() => null);
+      }
+      if (!head.materialize) return []; // unmoved and not asked for: nothing to do
+      // Outside the window and explicitly selected: a bounded stub is the
+      // point, so a walk that runs out of budget still counts.
+      return walk(head.oid, (oid) => oid !== head.oid && reached(oid), MAX_STUB_PAGES)
+        .catch(() => [])
+        .then((chain) => (chain.length > 0 ? chain : null));
     }),
   );
   if (fetched > 0) saveCache(cache); // partial walks too: retries resume deeper
 
   const commits = [];
   const spliced = new Set();
+  const truncated = [];
   let fresh = true;
   heads.forEach((head, i) => {
     if (chains[i]) {
@@ -273,6 +331,13 @@ export async function webFreshen(owner, repo, snapshotHeads, byOid, onProgress =
           spliced.add(commit.oid);
           commits.push(commit);
         }
+      }
+      if (head.materialize && !head.moved && chains[i].length > 0) {
+        const drawn = new Set(chains[i].map((commit) => commit.oid));
+        const open = chains[i].some((commit) =>
+          commit.parents.some((parent) => !drawn.has(parent) && !reached(parent)),
+        );
+        if (open) truncated.push(head.name);
       }
     } else if (head.oid) {
       head.oid = head.snapOid; // walk failed: stale but consistent
@@ -283,5 +348,6 @@ export async function webFreshen(owner, repo, snapshotHeads, byOid, onProgress =
     heads: heads.filter((head) => head.oid).map((head) => ({ name: head.name, oid: head.oid })),
     commits,
     fresh,
+    truncated,
   };
 }

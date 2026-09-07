@@ -5,9 +5,9 @@
 // back/forward, and pasted links all land on the graph.
 
 import { ensureTab, markTabSelected, markTabDeselected, repoNav, TAB_ID } from './tab.js';
-import { openRepoGraph, privateFreshEnabled, setPrivateFreshEnabled } from './data.js';
+import { openRepoGraph } from './data.js';
 import { layout } from './layout.js';
-import { render, renderStatus } from './render.js';
+import { render, renderStatus, closeBranchPicker, markViewBusy } from './render.js';
 import { maybeWelcome } from './welcome.js';
 
 const VIEW_ID = 'ggt-view';
@@ -42,6 +42,9 @@ function contentFrame() {
 }
 
 function closeGraphView() {
+  // The picker's menu lives on document.body, so it has to be taken down
+  // explicitly — removing the view would otherwise leave it floating.
+  closeBranchPicker();
   document.getElementById(VIEW_ID)?.remove();
   for (const element of hidden) {
     if (element.isConnected) element.style.removeProperty('display');
@@ -103,7 +106,7 @@ async function loadAndRender(view, repoRef) {
 function rerender(view) {
   const { commits, filtered } = source.view();
   // Reloading via a fresh source re-fetches meta (new nethash) and re-runs
-  // freshen(); used by both the Refresh button and the opt-in toggle.
+  // freshen(); used by the Refresh button.
   const reload = () => {
     const repoRef = { owner: source.owner, repo: source.repo };
     source = null;
@@ -113,12 +116,15 @@ function rerender(view) {
     owner: source.owner,
     repo: source.repo,
     commits,
-    graph: layout(commits),
+    graph: layout(commits, { pinnedOid: source.pinnedOid }),
     heads: source.heads,
+    branches: source.branches,
+    selected: source.selected,
+    defaultBranch: source.defaultBranch,
+    truncated: source.truncated,
+    canFetch: source.canFetch,
     tags: source.tags,
     fresh: source.fresh,
-    private: source.private,
-    privateFresh: privateFreshEnabled(),
     filtered,
     total: source.total,
     loaded: source.loaded(),
@@ -127,12 +133,16 @@ function rerender(view) {
     hasMore: source.hasMore(),
     onRefresh: reload,
     onLoadOlder: async () => {
+      markViewBusy(view);
       await source.loadOlder();
       rerender(view);
     },
-    onToggleFresh: (on) => {
-      setPrivateFreshEnabled(on);
-      reload();
+    // Adding branches only ever adds commits, so the loaded window survives:
+    // no meta/chunk refetch, just the pull for the newly ticked branches.
+    onSelectBranches: async (names) => {
+      markViewBusy(view);
+      await source.selectBranches(names);
+      rerender(view);
     },
   });
 }
