@@ -61,6 +61,7 @@
 /* The GitHub-style framed box: muted toolbar (title + counts subtitle +
    actions), optional banners, the graph, and a muted pagination footer. */
 .ggt-shell {
+  position: relative;
   border: 1px solid var(--borderColor-default, #d1d9e0);
   border-radius: 6px;
   overflow: hidden;
@@ -93,17 +94,22 @@
   flex-wrap: wrap;
   gap: 10px;
 }
+/* Primer's medium button: 32px tall, 12px side padding, 14px label. The
+   graph sits inside GitHub's chrome, so its buttons have to line up with the
+   ones GitHub renders right next to them. */
 .ggt-btn {
-  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  padding: 0 12px;
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
-  line-height: 26px;
-  color: var(--button-default-fgColor-rest, #24292f);
+  color: var(--button-default-fgColor-rest, #25292e);
   background: var(--button-default-bgColor-rest, #f6f8fa);
-  border: 1px solid var(--button-default-borderColor-rest, #d0d7de);
+  border: 1px solid var(--button-default-borderColor-rest, #d1d9e0);
   border-radius: 6px;
-  box-shadow: 0 1px 0 rgba(31, 35, 40, 0.04);
   cursor: pointer;
 }
 .ggt-btn:hover:enabled {
@@ -456,3 +462,5 @@ a.ggt-author:hover {
 .ggt-welcome-btn:hover {
   background: var(--button-primary-bgColor-hover, #1c8139);
 }
+
+

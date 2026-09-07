@@ -7,7 +7,7 @@
 import { ensureTab, markTabSelected, markTabDeselected, repoNav, TAB_ID } from './tab.js';
 import { openRepoGraph, privateFreshEnabled, setPrivateFreshEnabled } from './data.js';
 import { layout } from './layout.js';
-import { render, renderStatus } from './render.js';
+import { render, renderStatus, closeBranchPicker, markViewBusy } from './render.js';
 import { maybeWelcome } from './welcome.js';
 
 const VIEW_ID = 'ggt-view';
@@ -42,6 +42,9 @@ function contentFrame() {
 }
 
 function closeGraphView() {
+  // The picker's menu lives on document.body, so it has to be taken down
+  // explicitly — removing the view would otherwise leave it floating.
+  closeBranchPicker();
   document.getElementById(VIEW_ID)?.remove();
   for (const element of hidden) {
     if (element.isConnected) element.style.removeProperty('display');
@@ -113,8 +116,13 @@ function rerender(view) {
     owner: source.owner,
     repo: source.repo,
     commits,
-    graph: layout(commits),
+    graph: layout(commits, { pinnedOid: source.pinnedOid }),
     heads: source.heads,
+    branches: source.branches,
+    selected: source.selected,
+    defaultBranch: source.defaultBranch,
+    truncated: source.truncated,
+    canFetch: source.canFetch,
     tags: source.tags,
     fresh: source.fresh,
     private: source.private,
@@ -127,12 +135,20 @@ function rerender(view) {
     hasMore: source.hasMore(),
     onRefresh: reload,
     onLoadOlder: async () => {
+      markViewBusy(view);
       await source.loadOlder();
       rerender(view);
     },
     onToggleFresh: (on) => {
       setPrivateFreshEnabled(on);
       reload();
+    },
+    // Adding branches only ever adds commits, so the loaded window survives:
+    // no meta/chunk refetch, just the pull for the newly ticked branches.
+    onSelectBranches: async (names) => {
+      markViewBusy(view);
+      await source.selectBranches(names);
+      rerender(view);
     },
   });
 }
