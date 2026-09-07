@@ -49,8 +49,8 @@ Works on Chrome and Edge, Firefox is WiP.
   default is free: the default branch (`HEAD`'s symref target from ls-refs, or
   the `defaultBranch` the repo page embeds) plus every branch the window
   already holds — the old behaviour, at the old cost. The default branch is
-  always drawn and cannot be unticked, so lane 0 is always it. Ticking more branches
-  fetches just their tips (`want` + a small `deepen`, deliberately **no**
+  always drawn and cannot be unticked, so lane 0 is always it. Ticking more
+  branches fetches just their tips (`want` + a small `deepen`, deliberately **no**
   `have` lines: the loaded window is a slice of the network array, not an
   ancestor-closed set, so promising it as "have" makes the server negotiate
   everything away and answer with an empty pack). A branch that reaches back

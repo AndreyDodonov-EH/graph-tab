@@ -574,7 +574,7 @@ function buildBranchPicker(model) {
   for (const branch of ordered) {
     const kind = KINDS[branch.loaded ? 'loaded' : canFetch ? 'fetch' : 'unavailable'];
     const isDefault = branch.name === defaultBranch;
-    const on = isDefault || selected.has(branch.name);
+    const on = selected.has(branch.name);
     const only = on && selected.size === 1;
     const item = addRow({
       ...kind,
@@ -710,7 +710,6 @@ function avatarFallback(commit) {
  * Render the graph view into `container` (cleared first).
  * model: { owner, repo, commits, graph, heads, tags, fresh, filtered, total,
  *   loaded, olderCount, failedWindows, hasMore, onLoadOlder, onRefresh,
- *   private,
  *   branches, selected, defaultBranch, truncated, canFetch, onSelectBranches }
  */
 export function render(container, model) {
@@ -718,7 +717,7 @@ export function render(container, model) {
   const {
     owner, repo, commits, graph, heads, tags, fresh, filtered, hasMore,
     total, loaded, olderCount, failedWindows, onLoadOlder, onRefresh,
-    private: priv, branches, truncated = [],
+    branches, truncated = [],
   } = model;
 
   const refsByOid = new Map();
@@ -748,8 +747,8 @@ export function render(container, model) {
   const pill = el('span', 'ggt-pill' + (fresh ? ' ggt-pill-fresh' : ''), fresh ? 'Fresh' : 'Cached');
   pill.title = fresh
     ? 'Branch heads were verified live; the graph is current.'
-    : "Freshness could not be verified — GitHub's cached snapshot may lag recent pushes." +
-      (priv ? ' Use Refresh to try again.' : '');
+    : "Freshness could not be verified — GitHub's cached snapshot may lag recent pushes. " +
+      'Use Refresh to try again.';
   actions.appendChild(pill);
   const refresh = el('button', 'ggt-btn', 'Refresh');
   refresh.title = 'Reload the graph from GitHub';

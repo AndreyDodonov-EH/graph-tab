@@ -12,9 +12,9 @@
 //   - ticking more branches in the header picker pulls them in and keeps
 //     that choice for the repository.
 //
-// Selections are per repository (localStorage, like the column widths).
-// A missing entry means "auto", so a
-// repository that later grows a branch still picks it up.
+// Selections are per repository (localStorage, like the column widths). A
+// missing entry means "auto", so a repository that later grows a branch
+// still picks it up.
 
 const KEY = 'ggt-branches';
 

@@ -125,7 +125,6 @@ function rerender(view) {
     canFetch: source.canFetch,
     tags: source.tags,
     fresh: source.fresh,
-    private: source.private,
     filtered,
     total: source.total,
     loaded: source.loaded(),

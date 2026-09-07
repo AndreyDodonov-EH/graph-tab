@@ -38,7 +38,6 @@ const WINDOW = 100;
 const BRANCH_DEPTH = 8;
 const STUB_MAX = 12;
 
-
 // The page itself says which it is; content scripts can read it directly.
 // Unknown visibility counts as private: the public path must never probe a
 // private repo's git endpoints, where the anonymous 401 could surface the
@@ -416,12 +415,8 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
     }
   }
 
-  let selected = resolveSelection(
-    loadSelection(owner, repo),
-    branches,
-    defaultBranch,
-    (oid) => !!oid && byOid.has(oid),
-  );
+  const isLoaded = (oid) => !!oid && byOid.has(oid);
+  let selected = resolveSelection(loadSelection(owner, repo), branches, defaultBranch, isLoaded);
   async function materialise() {
     if (!live) return { fresh: false, truncated: [] };
     const chosen = branches.filter((branch) => selected.has(branch.name));
@@ -478,14 +473,17 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
     },
 
     // Drawing a different set of branches only ever *adds* commits, so the
-    // choice is applied in place: no refetch of meta or of the window.
+    // choice is applied in place: no refetch of meta or of the window — and
+    // a pure deselection needs no fetch at all, the commits are just hidden.
     async selectBranches(names) {
-      selected = new Set(names);
-      // The default branch is always drawn, in the leftmost lane.
-      if (defaultBranch && branches.some((branch) => branch.name === defaultBranch)) {
-        selected.add(defaultBranch);
-      }
+      const before = selected;
+      // Same normalisation as on open: the default branch is always in.
+      selected = resolveSelection(names, branches, defaultBranch, isLoaded);
       saveSelection(owner, repo, [...selected]);
+      if ([...selected].every((name) => before.has(name))) {
+        truncated = truncated.filter((name) => selected.has(name));
+        return;
+      }
       const result = await materialise();
       fresh = result.fresh;
       truncated = result.truncated;

@@ -30,7 +30,7 @@ test('a stored choice wins over the automatic default, plus the default branch',
   assert.deepEqual([...selected].sort(), ['develop', 'main']);
 });
 
-test('the default branch is drawn even when the stored choice left it out', () => {
+test("the default branch is drawn even when its tip is outside the window", () => {
   const selected = resolveSelection(['develop'], BRANCHES, 'main', loadedOnly());
   assert.ok(selected.has('main'));
 });
