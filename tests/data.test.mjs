@@ -49,15 +49,12 @@ test('meta fetch is retried after a transient failure', async () => {
   }
 });
 
-test('private repo with the opt-in freshens via web pages, never git', async () => {
+test('private repo freshens via web pages by default, never git', async () => {
   const FRESH_OID = 'b'.repeat(40);
   const realFetch = globalThis.fetch;
   globalThis.document = {
     querySelector: (selector) =>
       selector.includes('repository_public') ? { content: 'false' } : null,
-  };
-  globalThis.localStorage = {
-    getItem: (key) => (key === 'ggt-private-fresh' ? '1' : null),
   };
   globalThis.fetch = async (url) => {
     const path = String(url);
@@ -109,7 +106,7 @@ test('private repo with the opt-in freshens via web pages, never git', async () 
   }
 });
 
-test('private repo without the opt-in keeps the snapshot, marked stale', async () => {
+test('private repo whose page endpoints fail keeps the snapshot, marked stale', async () => {
   const realFetch = globalThis.fetch;
   globalThis.document = {
     querySelector: (selector) =>
@@ -117,8 +114,9 @@ test('private repo without the opt-in keeps the snapshot, marked stale', async (
   };
   globalThis.fetch = async (url) => {
     const path = String(url);
-    if (path.includes('.git/') || path.includes('/latest-commit/') || path.includes('/refs?')) {
-      throw new Error('freshen fetch without opt-in: ' + path);
+    if (path.includes('.git/')) throw new Error('git endpoint hit on a private repo');
+    if (path.includes('/latest-commit/') || path.includes('/refs?') || path.includes('/branches')) {
+      throw new Error('endpoint down: ' + path);
     }
     if (path.includes('/network/meta')) {
       return jsonResponse({
@@ -184,8 +182,9 @@ test('persistent 202 surfaces a "still generating" error, not "no data"', async 
   const realSetTimeout = globalThis.setTimeout;
   globalThis.setTimeout = (fn) => realSetTimeout(fn, 0);
   let metaCalls = 0;
-  globalThis.fetch = async () => {
-    metaCalls++;
+  globalThis.fetch = async (url) => {
+    // The ref list and tags ride alongside; only the snapshot is polled.
+    if (String(url).includes('/network/meta')) metaCalls++;
     return new Response('', { status: 202 });
   };
   try {
@@ -368,7 +367,7 @@ test('404 fails immediately without retries', async () => {
   };
   try {
     await assert.rejects(() => openRepoGraph('o', 'gone'), /No network-graph data/);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.filter((c) => c.includes('/network/')).length, 1);
   } finally {
     globalThis.fetch = realFetch;
   }

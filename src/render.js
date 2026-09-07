@@ -556,8 +556,7 @@ function buildBranchPicker(model) {
   // One decision per row rather than four ternaries over the same state: a
   // branch is loaded, or it can be pulled in, or nothing can reach it —
   // and separately it may be the default. Nothing can pull an unloaded
-  // branch in without a live ref source: a private repository rejects
-  // anonymous git and needs the freshness opt-in.
+  // branch in without a live ref source (offline, or an endpoint changed).
   const KINDS = {
     loaded: {},
     fetch: {
@@ -568,7 +567,7 @@ function buildBranchPicker(model) {
     unavailable: {
       tag: 'unavailable',
       tagClass: 'ggt-row-pill-fetch',
-      tagTitle: 'Outside the loaded window. Click the "Cached" pill in the header to make it available.',
+      tagTitle: 'Outside the loaded window, and no live ref source answered to pull it in.',
       disabled: true,
     },
   };
@@ -711,7 +710,7 @@ function avatarFallback(commit) {
  * Render the graph view into `container` (cleared first).
  * model: { owner, repo, commits, graph, heads, tags, fresh, filtered, total,
  *   loaded, olderCount, failedWindows, hasMore, onLoadOlder, onRefresh,
- *   private, privateFresh, onToggleFresh,
+ *   private,
  *   branches, selected, defaultBranch, truncated, canFetch, onSelectBranches }
  */
 export function render(container, model) {
@@ -719,7 +718,7 @@ export function render(container, model) {
   const {
     owner, repo, commits, graph, heads, tags, fresh, filtered, hasMore,
     total, loaded, olderCount, failedWindows, onLoadOlder, onRefresh,
-    private: priv, privateFresh, onToggleFresh, branches, truncated = [],
+    private: priv, branches, truncated = [],
   } = model;
 
   const refsByOid = new Map();
@@ -745,28 +744,12 @@ export function render(container, model) {
 
   const actions = el('div', 'ggt-actions');
   if (branches.length > 0) actions.appendChild(buildBranchPicker(model));
-  // On a private repo the pill is the opt-in switch: click "Cached" to fetch
-  // fresh commits (plus tags), click "Fresh" to go back to the snapshot.
-  // It looks exactly like the plain span; only a hover tells it apart.
-  const pill = el(priv ? 'button' : 'span', 'ggt-pill' + (fresh ? ' ggt-pill-fresh' : ''), fresh ? 'Fresh' : 'Cached');
-  if (priv) {
-    pill.type = 'button';
-    pill.setAttribute('aria-pressed', String(privateFresh));
-    pill.addEventListener('click', () => {
-      pill.disabled = true;
-      onToggleFresh(!privateFresh);
-    });
-  }
+  // Status only: the graph always tops the snapshot up with live heads.
+  const pill = el('span', 'ggt-pill' + (fresh ? ' ggt-pill-fresh' : ''), fresh ? 'Fresh' : 'Cached');
   pill.title = fresh
-    ? 'Branch heads were verified live; the graph is current.' +
-      (priv ? " Click to switch back to GitHub's cached snapshot." : '')
-    : priv && !privateFresh
-      ? "GitHub's cached snapshot — it can lag pushes by minutes to hours. " +
-        'Click to fetch fresh commits, plus tags, instead. On a private repository that takes ' +
-        'one small request per new commit and per tag, so the first load can take a while; ' +
-        'fetched commits are cached on this device.'
-      : "Freshness could not be verified — GitHub's cached snapshot may lag recent pushes." +
-        (priv ? ' Click to switch the fresh fetch off.' : '');
+    ? 'Branch heads were verified live; the graph is current.'
+    : "Freshness could not be verified — GitHub's cached snapshot may lag recent pushes." +
+      (priv ? ' Use Refresh to try again.' : '');
   actions.appendChild(pill);
   const refresh = el('button', 'ggt-btn', 'Refresh');
   refresh.title = 'Reload the graph from GitHub';

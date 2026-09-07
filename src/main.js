@@ -5,7 +5,7 @@
 // back/forward, and pasted links all land on the graph.
 
 import { ensureTab, markTabSelected, markTabDeselected, repoNav, TAB_ID } from './tab.js';
-import { openRepoGraph, privateFreshEnabled, setPrivateFreshEnabled } from './data.js';
+import { openRepoGraph } from './data.js';
 import { layout } from './layout.js';
 import { render, renderStatus, closeBranchPicker, markViewBusy } from './render.js';
 import { maybeWelcome } from './welcome.js';
@@ -106,7 +106,7 @@ async function loadAndRender(view, repoRef) {
 function rerender(view) {
   const { commits, filtered } = source.view();
   // Reloading via a fresh source re-fetches meta (new nethash) and re-runs
-  // freshen(); used by both the Refresh button and the opt-in toggle.
+  // freshen(); used by the Refresh button.
   const reload = () => {
     const repoRef = { owner: source.owner, repo: source.repo };
     source = null;
@@ -126,7 +126,6 @@ function rerender(view) {
     tags: source.tags,
     fresh: source.fresh,
     private: source.private,
-    privateFresh: privateFreshEnabled(),
     filtered,
     total: source.total,
     loaded: source.loaded(),
@@ -138,10 +137,6 @@ function rerender(view) {
       markViewBusy(view);
       await source.loadOlder();
       rerender(view);
-    },
-    onToggleFresh: (on) => {
-      setPrivateFreshEnabled(on);
-      reload();
     },
     // Adding branches only ever adds commits, so the loaded window survives:
     // no meta/chunk refetch, just the pull for the newly ticked branches.

@@ -23,8 +23,7 @@ const STEPS = [
     title: 'Honest Notes',
     body:
       'Getting history can take a while for some repos.\n' +
-      'Private repos may show stale data.\n' +
-      'For those, click the "Cached" pill in the header to fetch fresh commits.\n' +
+      'Private repos fetch missing commits one request at a time, so the first load is slower.\n' +
       '\n' +
       'Still, I hope you enjoy the extension ❤️\n' +
       'Feedback is welcome directly in this repo.',

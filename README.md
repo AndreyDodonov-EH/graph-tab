@@ -37,11 +37,10 @@ Works on Chrome and Edge, Firefox is WiP.
   own pack reader and RFC-1951 inflater). The same ls-refs call also returns
   tags (`peel` resolves annotated tags to their commits), rendered as dashed
   chips next to the branch chips. Private repos reject anonymous git,
-  so clicking the header's "Cached" pill opts in to walking
-  `/latest-commit/{ref}` and `/commit/{oid}` (as JSON via `Accept`) instead,
-  and resolves tags through `/refs?type=tag` + `/latest-commit/{tag}`.
-  That costs one request per missing commit (and per tag, capped), which is
-  why it is off by default.
+  so the graph walks `/latest-commit/{ref}` and `/commit/{oid}` (as JSON via
+  `Accept`) instead, and resolves tags through `/refs?type=tag` +
+  `/latest-commit/{tag}`. That costs one request per missing commit (and per
+  tag, capped), so the first load of a busy private repo is slower.
   Fetched commits are immutable, so they are cached (localStorage, keyed by
   oid) and never re-fetched.
 - **Branches** (`src/branches.js`, `src/render.js`, `src/octicon.js`): which branches the

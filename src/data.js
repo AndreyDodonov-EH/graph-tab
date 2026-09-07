@@ -38,26 +38,6 @@ const WINDOW = 100;
 const BRANCH_DEPTH = 8;
 const STUB_MAX = 12;
 
-// Opt-in freshness for private repos (see webfresh.js for why it costs one
-// page per missing commit). Persisted like column widths (columns.js).
-const PRIVATE_FRESH_KEY = 'ggt-private-fresh';
-
-export function privateFreshEnabled() {
-  try {
-    return localStorage.getItem(PRIVATE_FRESH_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-export function setPrivateFreshEnabled(on) {
-  try {
-    if (on) localStorage.setItem(PRIVATE_FRESH_KEY, '1');
-    else localStorage.removeItem(PRIVATE_FRESH_KEY);
-  } catch {
-    // storage unavailable; the choice just won't stick
-  }
-}
 
 // The page itself says which it is; content scripts can read it directly.
 // Unknown visibility counts as private: the public path must never probe a
@@ -231,8 +211,7 @@ function collectFrom(tip, fetched, known) {
 
 // The repository page embeds its own metadata for GitHub's React views; the
 // default branch is in there, which is the one branch the graph draws even
-// when the user has picked nothing. Free (no request) and the only source
-// available on a private repo without the freshness opt-in.
+// when the user has picked nothing. Free (no request).
 function pageDefaultBranch() {
   try {
     for (const script of document.querySelectorAll('script[data-target="react-app.embeddedData"]')) {
@@ -307,7 +286,7 @@ async function materialiseGit(owner, repo, dates, branches, byOid) {
   return { fresh, truncated };
 }
 
-// Same job over GitHub's page endpoints, for a private repo with the opt-in:
+// Same job over GitHub's page endpoints, for a private repo:
 // git smart-HTTP ignores the web session there (see webfresh.js).
 async function materialiseWeb(owner, repo, dates, branches, byOid, onProgress) {
   const result = await webFreshen(
@@ -334,7 +313,7 @@ async function materialiseWeb(owner, repo, dates, branches, byOid, onProgress) {
 /**
  * Open the graph data source for a repository.
  * @param onProgress called with a running fetch count while missing commits
- *   are pulled one request at a time (the private-repo opt-in path).
+ *   are pulled one request at a time (the private-repo path).
  * @returns {Promise<{
  *   owner, repo,
  *   heads,    // [{ name, oid }] the selected branches, for chips and roots
@@ -342,11 +321,11 @@ async function materialiseWeb(owner, repo, dates, branches, byOid, onProgress) {
  *   selected, // Set of selected branch names
  *   defaultBranch,
  *   tags,     // [{ name, oid }] with annotated tags peeled to their commit;
- *             // empty when refs could not be read (opted-out private repo, offline)
- *   fresh,    // false when no top-up was available (opted-out private repo, offline)
+ *             // empty when refs could not be read (offline, endpoint changed)
+ *   fresh,    // false when no top-up was available (offline, endpoint changed)
  *   truncated,// branches drawn as a stub because their history never met the window
  *   canFetch, // false when no live ref source is available to pull a branch in
- *   private,  // true when freshness needs the opt-in (git endpoints reject the session)
+ *   private,  // true when freshness goes through the web pages (git endpoints reject the session)
  *   selectBranches(names): Promise<void>,
  *   view(): { commits, filtered },  // newest-first, reachability-filtered
  *   hasMore(): boolean,
@@ -362,12 +341,11 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
   // Rejections are caught here so an early failure cannot go unhandled while
   // the snapshot is still loading; the callers below read the result.
   const priv = isPrivateRepo();
-  const optIn = privateFreshEnabled();
   const refsPending = priv
-    ? optIn && webBranches(owner, repo).catch(() => null)
+    ? webBranches(owner, repo).catch(() => null)
     : lsRefs(owner, repo).catch(() => null);
   // Tags are decoration: losing them must not revert a good freshen.
-  const tagsPending = priv && optIn && webTags(owner, repo).catch(() => []);
+  const tagsPending = priv && webTags(owner, repo).catch(() => []);
 
   const meta = await fetchJson(`${base}/network/meta`, PENDING_DELAYS_MS);
   if (!meta || typeof meta.nethash !== 'string') {
@@ -424,10 +402,10 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
     }
     // A null result means anonymous git refused (GHES, offline); the
     // snapshot head list still works.
-  } else if (optIn) {
-    // webFreshen resolves every head live on its own, so the opt-in alone
-    // makes the data fresh; the branch list is only there to offer branches
-    // the snapshot never saw.
+  } else {
+    // webFreshen resolves every head live on its own, so the data is fresh
+    // regardless; the branch list is only there to offer branches the
+    // snapshot never saw.
     live = true;
     const listed = await refsPending;
     // A null result means the endpoint changed or is forbidden; the snapshot
@@ -466,9 +444,8 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
     repo,
     defaultBranch,
     private: priv,
-    // Whether a branch outside the loaded window can still be pulled in: a
-    // private repository needs the freshness opt-in for that, since git
-    // smart-HTTP does not accept the web session.
+    // Whether a branch outside the loaded window can still be pulled in
+    // (false only when no live ref source answered).
     canFetch: live,
     total,
 

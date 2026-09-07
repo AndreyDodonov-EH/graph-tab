@@ -14,7 +14,7 @@
 //      react-app.embeddedData JSON — kept as a parsing fallback)
 //
 // Parents only come from the commit route, so this still costs one request
-// per missing commit — hence the opt-in in data.js and MAX_PAGES. Only
+// per missing commit — hence MAX_PAGES. Only
 // branches whose head moved are walked, each independently: a branch that
 // fails (cap hit, endpoint change) keeps its stale-but-consistent snapshot
 // head while the others still freshen.
