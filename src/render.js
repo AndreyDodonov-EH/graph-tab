@@ -568,13 +568,14 @@ function buildBranchPicker(model) {
     unavailable: {
       tag: 'unavailable',
       tagClass: 'ggt-row-pill-fetch',
-      tagTitle: 'Outside the loaded window. Tick "fetch fresh commits" to make it available.',
+      tagTitle: 'Outside the loaded window. Click the "Cached" pill in the header to make it available.',
       disabled: true,
     },
   };
   for (const branch of ordered) {
     const kind = KINDS[branch.loaded ? 'loaded' : canFetch ? 'fetch' : 'unavailable'];
-    const on = selected.has(branch.name);
+    const isDefault = branch.name === defaultBranch;
+    const on = isDefault || selected.has(branch.name);
     const only = on && selected.size === 1;
     const item = addRow({
       ...kind,
@@ -582,17 +583,19 @@ function buildBranchPicker(model) {
       on,
       // The default branch says so instead of its state; its tooltip still
       // explains the state when there is one to explain.
-      ...(branch.name === defaultBranch ? { tag: 'default', tagClass: '' } : {}),
+      ...(isDefault ? { tag: 'default', tagClass: '' } : {}),
       onPick: (row) => {
-        // A graph of no branches is not a state worth reaching by accident.
-        if (only) return;
+        // The default branch is always drawn, in the leftmost lane; and a
+        // graph of no branches is not a state worth reaching by accident.
+        if (isDefault || only) return;
         const next = on
           ? [...selected].filter((name) => name !== branch.name)
           : [...selected, branch.name];
         apply(next, row);
       },
     });
-    if (only) item.title = 'At least one branch has to be shown.';
+    if (isDefault) item.title = 'The default branch is always drawn, in the leftmost lane.';
+    else if (only) item.title = 'At least one branch has to be shown.';
     rows.push({ name: branch.name, item });
   }
 
@@ -742,35 +745,28 @@ export function render(container, model) {
 
   const actions = el('div', 'ggt-actions');
   if (branches.length > 0) actions.appendChild(buildBranchPicker(model));
-  if (priv) {
-    const label = el('label', 'ggt-fresh');
-    label.title =
-      "Show the latest commits, plus tags, instead of GitHub's cached snapshot. " +
-      'On a private repository this takes one small request per new commit and per tag, ' +
-      'so the first load can take a while; fetched commits are cached on this device.';
-    const box = el('input');
-    box.type = 'checkbox';
-    box.checked = privateFresh;
-    box.addEventListener('change', () => onToggleFresh(box.checked));
-    label.append(box, 'fetch fresh commits');
-    actions.appendChild(label);
-  }
-  // On a private repo the pill is also clickable: it flips the same
-  // "fetch fresh commits" switch as the checkbox. Looks identical to the span.
+  // On a private repo the pill is the opt-in switch: click "Cached" to fetch
+  // fresh commits (plus tags), click "Fresh" to go back to the snapshot.
+  // It looks exactly like the plain span; only a hover tells it apart.
   const pill = el(priv ? 'button' : 'span', 'ggt-pill' + (fresh ? ' ggt-pill-fresh' : ''), fresh ? 'Fresh' : 'Cached');
   if (priv) {
     pill.type = 'button';
+    pill.setAttribute('aria-pressed', String(privateFresh));
     pill.addEventListener('click', () => {
       pill.disabled = true;
       onToggleFresh(!privateFresh);
     });
   }
   pill.title = fresh
-    ? 'Branch heads were verified live; the graph is current.'
+    ? 'Branch heads were verified live; the graph is current.' +
+      (priv ? " Click to switch back to GitHub's cached snapshot." : '')
     : priv && !privateFresh
       ? "GitHub's cached snapshot — it can lag pushes by minutes to hours. " +
-        'Tick "fetch fresh commits" to top it up.'
-      : "Freshness could not be verified — GitHub's cached snapshot may lag recent pushes.";
+        'Click to fetch fresh commits, plus tags, instead. On a private repository that takes ' +
+        'one small request per new commit and per tag, so the first load can take a while; ' +
+        'fetched commits are cached on this device.'
+      : "Freshness could not be verified — GitHub's cached snapshot may lag recent pushes." +
+        (priv ? ' Click to switch the fresh fetch off.' : '');
   actions.appendChild(pill);
   const refresh = el('button', 'ggt-btn', 'Refresh');
   refresh.title = 'Reload the graph from GitHub';

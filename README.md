@@ -37,7 +37,7 @@ Works on Chrome and Edge, Firefox is WiP.
   own pack reader and RFC-1951 inflater). The same ls-refs call also returns
   tags (`peel` resolves annotated tags to their commits), rendered as dashed
   chips next to the branch chips. Private repos reject anonymous git,
-  so an opt-in header checkbox ("fetch fresh commits") walks
+  so clicking the header's "Cached" pill opts in to walking
   `/latest-commit/{ref}` and `/commit/{oid}` (as JSON via `Accept`) instead,
   and resolves tags through `/refs?type=tag` + `/latest-commit/{tag}`.
   That costs one request per missing commit (and per tag, capped), which is
@@ -49,7 +49,8 @@ Works on Chrome and Edge, Firefox is WiP.
   a request to pull in and not everyone wants every `dependabot/*` line. The
   default is free: the default branch (`HEAD`'s symref target from ls-refs, or
   the `defaultBranch` the repo page embeds) plus every branch the window
-  already holds — the old behaviour, at the old cost. Ticking more branches
+  already holds — the old behaviour, at the old cost. The default branch is
+  always drawn and cannot be unticked, so lane 0 is always it. Ticking more branches
   fetches just their tips (`want` + a small `deepen`, deliberately **no**
   `have` lines: the loaded window is a slice of the network array, not an
   ancestor-closed set, so promising it as "have" makes the server negotiate

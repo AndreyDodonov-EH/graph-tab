@@ -523,3 +523,23 @@ test('deselecting a branch removes its commits from the graph', async () => {
     delete globalThis.localStorage;
   }
 });
+
+test('the default branch stays drawn, in lane 0, when only another branch is picked', async () => {
+  // `feature` is ahead of `main`; picking just `feature` must still draw
+  // `main`, and `main` (not the newer tip) owns the leftmost lane.
+  const side = commitBytes({ parents: [OID], message: 'side\n' });
+  const realFetch = globalThis.fetch;
+  globalThis.document = publicDocument;
+  globalThis.fetch = branchPickerFetch({ packObjects: [side], featOid: oidOf(side) });
+  try {
+    const source = await openRepoGraph('o', 'r');
+    await source.selectBranches(['feature']);
+    assert.deepEqual(source.heads.map((h) => h.name).sort(), ['feature', 'main']);
+    assert.equal(source.pinnedOid, OID);
+    assert.ok(source.selected.has('main'));
+    assert.deepEqual(source.view().commits.map((c) => c.oid), [oidOf(side), OID]);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete globalThis.document;
+  }
+});

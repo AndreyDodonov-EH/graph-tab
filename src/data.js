@@ -475,7 +475,8 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
     get heads() {
       return selectedBranches().map((branch) => ({ name: branch.name, oid: branch.oid }));
     },
-    // Lane 0 is the default branch's, but only while it is actually drawn.
+    // Lane 0 is always the default branch's: it is drawn whatever else is
+    // picked, so even a branch far ahead of it lands to its right.
     get pinnedOid() {
       return selectedBranches().find((branch) => branch.name === defaultBranch)?.oid || '';
     },
@@ -503,6 +504,10 @@ export async function openRepoGraph(owner, repo, onProgress = () => {}) {
     // choice is applied in place: no refetch of meta or of the window.
     async selectBranches(names) {
       selected = new Set(names);
+      // The default branch is always drawn, in the leftmost lane.
+      if (defaultBranch && branches.some((branch) => branch.name === defaultBranch)) {
+        selected.add(defaultBranch);
+      }
       saveSelection(owner, repo, [...selected]);
       const result = await materialise();
       fresh = result.fresh;

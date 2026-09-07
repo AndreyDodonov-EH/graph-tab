@@ -25,14 +25,19 @@ test('every branch is shown when none of them is loaded and there is no default'
   assert.deepEqual([...selected].sort(), ['develop', 'main', 'release/1.x']);
 });
 
-test('a stored choice wins over the automatic default', () => {
+test('a stored choice wins over the automatic default, plus the default branch', () => {
   const selected = resolveSelection(['develop'], BRANCHES, 'main', loadedOnly('a'));
-  assert.deepEqual([...selected], ['develop']);
+  assert.deepEqual([...selected].sort(), ['develop', 'main']);
+});
+
+test('the default branch is drawn even when the stored choice left it out', () => {
+  const selected = resolveSelection(['develop'], BRANCHES, 'main', loadedOnly());
+  assert.ok(selected.has('main'));
 });
 
 test('branches deleted since the choice was made are dropped', () => {
   const selected = resolveSelection(['develop', 'gone'], BRANCHES, 'main', loadedOnly('a'));
-  assert.deepEqual([...selected], ['develop']);
+  assert.deepEqual([...selected].sort(), ['develop', 'main']);
 });
 
 test('a stored choice whose branches are all gone falls back to automatic', () => {

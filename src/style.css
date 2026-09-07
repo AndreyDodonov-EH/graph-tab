@@ -120,7 +120,7 @@
   opacity: 0.65;
 }
 .ggt-btn:focus-visible,
-.ggt-fresh input:focus-visible {
+button.ggt-pill:focus-visible {
   outline: 2px solid var(--focus-outlineColor, #0969da);
   outline-offset: 2px;
 }
@@ -164,17 +164,6 @@ button.ggt-pill:disabled {
   color: var(--fgColor-danger, #d1242f);
   background: var(--bgColor-danger-muted, #ffebe9);
 }
-.ggt-fresh {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  color: var(--fgColor-muted, #59636e);
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-}
-
 /* Column widths are --ggt-col-* variables set by columns.js; the header
    dividers drag them live. Grips sit on the column boundaries: author/date/
    sha are right-anchored (message flexes), so grips position from the right

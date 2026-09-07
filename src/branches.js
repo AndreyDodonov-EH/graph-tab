@@ -55,13 +55,16 @@ export function saveSelection(owner, repo, names) {
  */
 export function resolveSelection(stored, branches, defaultBranch, isLoaded) {
   const existing = new Set(branches.map((branch) => branch.name));
+  const hasDefault = !!defaultBranch && existing.has(defaultBranch);
   if (stored) {
     // Branches can be deleted between visits; drop the ones that are gone.
-    const kept = stored.filter((name) => existing.has(name));
-    if (kept.length > 0) return new Set(kept);
+    const kept = new Set(stored.filter((name) => existing.has(name)));
+    // The default branch is always drawn (it owns lane 0), whatever was stored.
+    if (hasDefault) kept.add(defaultBranch);
+    if (kept.size > 0) return kept;
   }
   const auto = new Set(branches.filter((branch) => isLoaded(branch.oid)).map((b) => b.name));
-  if (defaultBranch && existing.has(defaultBranch)) auto.add(defaultBranch);
+  if (hasDefault) auto.add(defaultBranch);
   // A repository whose every tip sits outside the window would otherwise
   // render empty; fall back to showing all of them.
   return auto.size > 0 ? auto : existing;
